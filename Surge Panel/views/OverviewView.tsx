@@ -1,7 +1,6 @@
 // 总览 Tab
 import {
   AreaChart,
-  Button,
   Chart,
   gradient,
   HStack,
@@ -200,10 +199,8 @@ export function OverviewView() {
               title="内存"
               value={memParts ? memParts.value : "—"}
               unit={memParts?.unit}
-              subtitle="长按查看诊断"
-              contextMenuItems={
-                <Button title="内存诊断" systemImage="stethoscope" action={() => setShowDiag(true)} />
-              }
+              subtitle="点按查看诊断"
+              onTap={() => setShowDiag(true)}
             />
             <StatCard
               icon="clock.fill"

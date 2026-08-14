@@ -11,6 +11,7 @@ export function StatCard({
   subtitle,
   badge,
   contextMenuItems,
+  onTap,
 }: {
   icon: string
   iconColor: Color
@@ -20,6 +21,7 @@ export function StatCard({
   subtitle?: string
   badge?: string
   contextMenuItems?: VirtualNode
+  onTap?: () => void
 }) {
   return (
     <VStack
@@ -29,6 +31,8 @@ export function StatCard({
       frame={{ maxWidth: "infinity", alignment: "leading" }}
       background={cardBackground()}
       contextMenu={contextMenuItems ? { menuItems: contextMenuItems } : undefined}
+      contentShape="rect"
+      onTapGesture={onTap}
     >
       <HStack spacing={6}>
         <Image systemName={icon} foregroundStyle={iconColor} font={14} />

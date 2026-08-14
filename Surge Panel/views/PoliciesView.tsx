@@ -21,6 +21,9 @@ import {
   getPolicyGroupSelection,
   getPolicyGroups,
   getGroupTestResults,
+  getCurrentProfile,
+  orderPolicyGroupNames,
+  parseProxyGroupOrder,
   selectPolicyGroup,
   testPolicies,
   testPolicyGroup,
@@ -35,6 +38,7 @@ import { connectErrorText } from "../lib/ui"
 export function PoliciesView() {
   const state = useStore()
   const [groups, setGroups] = useState<Record<string, PolicyOption[]> | null>(null)
+  const [groupOrder, setGroupOrder] = useState<string[]>([])
   const [selections, setSelections] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -46,10 +50,17 @@ export function PoliciesView() {
     try {
       const g = await getPolicyGroups(state.config)
       setGroups(g)
+      const apiNames = Object.keys(g)
+      try {
+        const raw = await getCurrentProfile(state.config)
+        const profile = typeof raw === "string" ? raw : raw.profile ?? ""
+        setGroupOrder(orderPolicyGroupNames(apiNames, parseProxyGroupOrder(profile)))
+      } catch {
+        setGroupOrder(apiNames)
+      }
       // 逐组查询当前选中项（url-test 等组可能不支持，忽略失败）
-      const names = Object.keys(g)
       const results = await Promise.all(
-        names.map(async (n) => {
+        apiNames.map(async (n) => {
           try {
             const r = await getPolicyGroupSelection(state.config, n)
             return [n, r.policy] as const
@@ -72,7 +83,7 @@ export function PoliciesView() {
     load()
   }, [state.config])
 
-  const names = groups ? Object.keys(groups) : []
+  const names = groups ? (groupOrder.length ? groupOrder : Object.keys(groups)) : []
   const q = query.trim().toLowerCase()
   const filtered = q ? names.filter((n) => n.toLowerCase().includes(q)) : names
 

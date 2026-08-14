@@ -271,6 +271,41 @@ export const setLogLevel = (c: SurgeConfig, level: string) =>
 export const getCurrentProfile = (c: SurgeConfig) =>
   get<{ profile?: string } | string>(c, "/v1/profiles/current?sensitive=0")
 
+/** 从配置文本解析 [Proxy Group] 出现顺序，对齐 Surge App 列表 */
+export function parseProxyGroupOrder(profile: string): string[] {
+  const names: string[] = []
+  let inGroup = false
+  for (const raw of profile.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (/^\[.+\]$/.test(line)) {
+      inGroup = /^\[Proxy Group\]$/i.test(line)
+      continue
+    }
+    if (!inGroup || !line || line.startsWith("#") || line.startsWith(";") || line.startsWith("//")) continue
+    const eq = line.indexOf("=")
+    if (eq <= 0) continue
+    names.push(line.slice(0, eq).trim())
+  }
+  return names
+}
+
+export function orderPolicyGroupNames(names: string[], profileOrder: string[]): string[] {
+  if (profileOrder.length === 0) return names
+  const have = new Set(names)
+  const seen = new Set<string>()
+  const ordered: string[] = []
+  for (const n of profileOrder) {
+    if (have.has(n) && !seen.has(n)) {
+      ordered.push(n)
+      seen.add(n)
+    }
+  }
+  for (const n of names) {
+    if (!seen.has(n)) ordered.push(n)
+  }
+  return ordered
+}
+
 // ---------- 功能开关 / 模块 ----------
 
 export type FeatureKey = "mitm" | "capture" | "rewrite" | "scripting"
