@@ -1,4 +1,4 @@
-// 首页模式统一页内大标题：位于分段选择器正下方，与流量/总览的页内标题位置一致
+// 首页模式页内标题：分段选择器已标明当前 Tab，用较小标题避免与底栏/分段器抢层级
 import { Script, Text, VStack } from "scripting"
 
 export function HomeTitleWrapper({
@@ -15,10 +15,16 @@ export function HomeTitleWrapper({
       spacing={0}
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
     >
-      <Text font={28} fontWeight="bold" padding={{ leading: 16, bottom: 6 }}>
+      <Text font={22} fontWeight="bold" padding={{ leading: 20, trailing: 20, top: 4, bottom: 10 }}>
         {title}
       </Text>
       {children}
     </VStack>
   )
+}
+
+/** 全屏运行时的页内大标题；首页模式由 HomeTitleWrapper / 分段器承担，不再重复 */
+export function FullscreenPageTitle({ title }: { title: string }) {
+  if (Script.env === "home_screen") return null
+  return <Text font={28} fontWeight="bold">{title}</Text>
 }

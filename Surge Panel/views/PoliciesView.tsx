@@ -85,39 +85,38 @@ export function PoliciesView() {
           <Text foregroundStyle="secondaryLabel">加载中…</Text>
         </Section>
       ) : null}
-      {groups
-        ? Object.keys(groups).map((name) => {
+      {groups ? (
+        <Section footer={<Text font={13}>{`${Object.keys(groups).length} 个策略组`}</Text>}>
+          {Object.keys(groups).map((name) => {
             const options = groups[name]
             const selected = selections[name]
             return (
-              <Section key={name}>
-                <NavigationLink
-                  destination={
-                    <GroupDetailView
-                      groupName={name}
-                      options={options}
-                      initialSelection={selected ?? null}
-                      onChanged={() => {
-                        getPolicyGroupSelection(state.config, name)
-                          .then((r) => setSelections((s) => ({ ...s, [name]: r.policy })))
-                          .catch(() => {})
-                      }}
-                    />
-                  }
-                >
-                  <HStack spacing={10}>
-                    <VStack alignment="leading" spacing={2}>
-                      <Text font={16}>{name}</Text>
-                      <Text font={12} foregroundStyle="secondaryLabel">
-                        {selected ?? `${options.length} 个选项`}
-                      </Text>
-                    </VStack>
-                  </HStack>
-                </NavigationLink>
-              </Section>
+              <NavigationLink
+                key={name}
+                destination={
+                  <GroupDetailView
+                    groupName={name}
+                    options={options}
+                    initialSelection={selected ?? null}
+                    onChanged={() => {
+                      getPolicyGroupSelection(state.config, name)
+                        .then((r) => setSelections((s) => ({ ...s, [name]: r.policy })))
+                        .catch(() => {})
+                    }}
+                  />
+                }
+              >
+                <VStack alignment="leading" spacing={3}>
+                  <Text font={17} lineLimit={1} minScaleFactor={0.8}>{name}</Text>
+                  <Text font={13} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.8}>
+                    {selected ?? `${options.length} 个选项`}
+                  </Text>
+                </VStack>
+              </NavigationLink>
             )
-          })
-        : null}
+          })}
+        </Section>
+      ) : null}
     </List>
     </HomeTitleWrapper>
   )
@@ -294,7 +293,7 @@ export function GroupDetailView({
       ) : null}
       <Section
         footer={
-          <Text font={12}>
+          <Text font={13}>
             {testing
               ? testProgress || "测速中…"
               : autoGroup === false
@@ -328,10 +327,10 @@ export function GroupDetailView({
               onTapGesture={() => select(o.name)}
             >
               <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-                <Text font={16} lineLimit={1} minScaleFactor={0.7}>{o.name}</Text>
-                <Text font={12} foregroundStyle="secondaryLabel">{o.typeDescription}</Text>
+                <Text font={17} lineLimit={1} minScaleFactor={0.7}>{o.name}</Text>
+                <Text font={13} foregroundStyle="secondaryLabel">{o.typeDescription}</Text>
                 {details[o.name] ? (
-                  <Text font={10} foregroundStyle="tertiaryLabel" lineLimit={1} minScaleFactor={0.7}>
+                  <Text font={12} foregroundStyle="tertiaryLabel" lineLimit={1} minScaleFactor={0.7}>
                     {details[o.name]}
                   </Text>
                 ) : null}

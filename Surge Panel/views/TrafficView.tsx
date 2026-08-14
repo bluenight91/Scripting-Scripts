@@ -9,9 +9,10 @@ import {
   type Color,
 } from "scripting"
 import { GradientBar } from "../components/GradientBar"
+import { HomeTitleWrapper, FullscreenPageTitle } from "../components/HomeTitleWrapper"
 import { StatCard } from "../components/StatCard"
 import { useStore } from "../lib/store"
-import { formatBytes, formatSpeed, seriesByLabel } from "../lib/metrics"
+import { formatBytes, formatSpeed, formatSpeedParts, seriesByLabel } from "../lib/metrics"
 
 const BAR_COLORS: [Color, Color][] = [
   ["#5E5CE6", "#64D2FF"],
@@ -71,25 +72,31 @@ export function TrafficView() {
         )
     : []
 
+  const downParts = state.running ? formatSpeedParts(state.speeds.inSpeed) : null
+  const upParts = state.running ? formatSpeedParts(state.speeds.outSpeed) : null
+
   return (
+    <HomeTitleWrapper title="流量">
     <ScrollView axes="vertical">
-      <VStack alignment="leading" spacing={14} padding={16}>
-        <Text font={28} fontWeight="bold">流量</Text>
+      <VStack alignment="leading" spacing={16} padding={16}>
+        <FullscreenPageTitle title="流量" />
 
         {/* 实时速率 */}
-        <HStack spacing={10}>
+        <HStack spacing={12}>
           <StatCard
             icon="arrow.down.circle.fill"
             iconColor="systemBlue"
             title="实时下载"
-            value={state.running ? formatSpeed(state.speeds.inSpeed) : "—"}
+            value={downParts ? downParts.value : "—"}
+            unit={downParts?.unit}
             subtitle="全部网络接口"
           />
           <StatCard
             icon="arrow.up.circle.fill"
             iconColor="systemGreen"
             title="实时上传"
-            value={state.running ? formatSpeed(state.speeds.outSpeed) : "—"}
+            value={upParts ? upParts.value : "—"}
+            unit={upParts?.unit}
             subtitle="全部网络接口"
           />
         </HStack>
@@ -97,15 +104,15 @@ export function TrafficView() {
         {/* 活动中的节点 */}
         <VStack
           alignment="leading"
-          spacing={10}
-          padding={14}
+          spacing={12}
+          padding={16}
           frame={{ maxWidth: "infinity", alignment: "leading" }}
           background={{ style: "rgba(128,128,128,0.14)", shape: { type: "rect", cornerRadius: 16, style: "continuous" } }}
         >
           <HStack>
             <Text font={15} fontWeight="semibold">活动中的节点</Text>
             <Spacer />
-            <Text font={11} foregroundStyle="secondaryLabel">
+            <Text font={12} foregroundStyle="secondaryLabel">
               {state.traffic ? `${activeNodes.length} 个正在传输` : "未连接"}
             </Text>
           </HStack>
@@ -113,17 +120,17 @@ export function TrafficView() {
             <Text font={13} foregroundStyle="secondaryLabel">当前没有节点在传输</Text>
           ) : (
             activeNodes.map(([name, v]) => (
-              <HStack key={name} spacing={10}>
-                <Text font={14} lineLimit={1} minScaleFactor={0.7} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+              <HStack key={name} spacing={10} padding={{ vertical: 2 }}>
+                <Text font={15} lineLimit={1} minScaleFactor={0.7} frame={{ maxWidth: "infinity", alignment: "leading" }}>
                   {name}
                 </Text>
                 <HStack spacing={4}>
-                  <Image systemName="arrow.down" font={9} foregroundStyle="systemBlue" />
-                  <Text font={12}>{formatSpeed(v.inCurrentSpeed)}</Text>
+                  <Image systemName="arrow.down" font={10} foregroundStyle="systemBlue" />
+                  <Text font={13}>{formatSpeed(v.inCurrentSpeed)}</Text>
                 </HStack>
                 <HStack spacing={4}>
-                  <Image systemName="arrow.up" font={9} foregroundStyle="systemGreen" />
-                  <Text font={12} foregroundStyle="secondaryLabel">{formatSpeed(v.outCurrentSpeed)}</Text>
+                  <Image systemName="arrow.up" font={10} foregroundStyle="systemGreen" />
+                  <Text font={13} foregroundStyle="secondaryLabel">{formatSpeed(v.outCurrentSpeed)}</Text>
                 </HStack>
               </HStack>
             ))
@@ -134,14 +141,14 @@ export function TrafficView() {
         <VStack
           alignment="leading"
           spacing={12}
-          padding={14}
+          padding={16}
           frame={{ maxWidth: "infinity", alignment: "leading" }}
           background={{ style: "rgba(128,128,128,0.14)", shape: { type: "rect", cornerRadius: 16, style: "continuous" } }}
         >
           <HStack>
             <Text font={15} fontWeight="semibold">节点流量排行</Text>
             <Spacer />
-            <Text font={11} foregroundStyle="secondaryLabel">本次引擎运行累计</Text>
+            <Text font={12} foregroundStyle="secondaryLabel">本次引擎运行累计</Text>
           </HStack>
           {top.length === 0 ? (
             <Text font={13} foregroundStyle="secondaryLabel">暂无流量数据</Text>
@@ -162,11 +169,11 @@ export function TrafficView() {
         <VStack
           alignment="leading"
           spacing={0}
-          padding={14}
+          padding={16}
           frame={{ maxWidth: "infinity", alignment: "leading" }}
           background={{ style: "rgba(128,128,128,0.14)", shape: { type: "rect", cornerRadius: 16, style: "continuous" } }}
         >
-          <Text font={15} fontWeight="semibold" padding={{ bottom: 8 }}>节点明细</Text>
+          <Text font={15} fontWeight="semibold" padding={{ bottom: 10 }}>节点明细</Text>
           {rows.length === 0 ? (
             <Text font={13} foregroundStyle="secondaryLabel">暂无数据</Text>
           ) : (
@@ -178,21 +185,21 @@ export function TrafficView() {
               return (
               <VStack key={r.name} spacing={0}>
                 {i > 0 ? <Spacer frame={{ height: 1 }} /> : null}
-                <HStack spacing={10} padding={{ top: 8, bottom: 8 }}>
-                  <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-                    <Text font={14} lineLimit={1} minScaleFactor={0.7}>{r.name}</Text>
-                    <Text font={11} foregroundStyle="secondaryLabel">
+                <HStack spacing={10} padding={{ top: 10, bottom: 10 }}>
+                  <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+                    <Text font={15} lineLimit={1} minScaleFactor={0.7}>{r.name}</Text>
+                    <Text font={12} foregroundStyle="secondaryLabel">
                       {`累计 ↓${formatBytes(r.inB)}  ↑${formatBytes(r.outB)}${peak > 0 ? ` · 峰值 ${formatSpeed(peak)}` : ""}`}
                     </Text>
                   </VStack>
-                  <VStack alignment="trailing" spacing={2}>
+                  <VStack alignment="trailing" spacing={3}>
                     <HStack spacing={4}>
-                      <Image systemName="arrow.down" font={9} foregroundStyle="systemBlue" />
-                      <Text font={12}>{formatSpeed(inSpeed)}</Text>
+                      <Image systemName="arrow.down" font={10} foregroundStyle="systemBlue" />
+                      <Text font={13}>{formatSpeed(inSpeed)}</Text>
                     </HStack>
                     <HStack spacing={4}>
-                      <Image systemName="arrow.up" font={9} foregroundStyle="systemGreen" />
-                      <Text font={12} foregroundStyle="secondaryLabel">{formatSpeed(outSpeed)}</Text>
+                      <Image systemName="arrow.up" font={10} foregroundStyle="systemGreen" />
+                      <Text font={13} foregroundStyle="secondaryLabel">{formatSpeed(outSpeed)}</Text>
                     </HStack>
                   </VStack>
                 </HStack>
@@ -203,5 +210,6 @@ export function TrafficView() {
         </VStack>
       </VStack>
     </ScrollView>
+    </HomeTitleWrapper>
   )
 }

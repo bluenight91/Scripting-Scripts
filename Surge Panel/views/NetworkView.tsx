@@ -35,17 +35,18 @@ export function NetworkView() {
   return (
     <HomeTitleWrapper title="网络">
     <List navigationTitle={Script.env === "home_screen" ? undefined : "网络"}>
-      <Section>
+      <Section
+        footer={
+          <Text font={13}>
+            活动连接支持长按终止；最近请求展示规则命中与失败状态。数据来自 Surge HTTP API（/v1/requests、/v1/events、/v1/dns）。
+          </Text>
+        }
+      >
         <NavigationLink title="活动连接" destination={<ActiveConnectionsView />} />
         <NavigationLink title="最近请求" destination={<RecentRequestsView />} />
         <NavigationLink title="事件中心" destination={<EventsView />} />
         <NavigationLink title="DNS 缓存" destination={<DnsView />} />
         <NavigationLink title="规则浏览器" destination={<RulesView />} />
-      </Section>
-      <Section footer={<Text font={12}>活动连接支持长按终止；最近请求展示规则命中与失败状态</Text>}>
-        <Text font={13} foregroundStyle="secondaryLabel">
-          数据来自 Surge HTTP API（/v1/requests、/v1/events、/v1/dns）
-        </Text>
       </Section>
     </List>
     </HomeTitleWrapper>
@@ -160,35 +161,35 @@ function RecentRequestsView() {
 
 function RequestRow({ r, active }: { r: SurgeRequest; active?: boolean }) {
   return (
-    <VStack alignment="leading" spacing={3}>
+    <VStack alignment="leading" spacing={4}>
       <HStack spacing={6}>
         {r.failed ? (
-          <Image systemName="xmark.octagon.fill" foregroundStyle="systemRed" font={11} />
+          <Image systemName="xmark.octagon.fill" foregroundStyle="systemRed" font={12} />
         ) : r.rejected ? (
-          <Image systemName="hand.raised.fill" foregroundStyle="systemOrange" font={11} />
+          <Image systemName="hand.raised.fill" foregroundStyle="systemOrange" font={12} />
         ) : null}
-        <Text font={14} lineLimit={1} minScaleFactor={0.6}>
+        <Text font={16} lineLimit={1} minScaleFactor={0.6}>
           {r.remoteHost ?? r.URL}
         </Text>
       </HStack>
       <HStack spacing={8}>
-        <Text font={11} foregroundStyle="secondaryLabel" lineLimit={1}>
+        <Text font={13} foregroundStyle="secondaryLabel" lineLimit={1}>
           {active ? r.policyName : `${r.method ?? ""} ${r.policyName}`}
         </Text>
         <Spacer />
         {active ? (
           <>
-            <Text font={11} foregroundStyle="systemBlue">{`↓${formatSpeed(r.inCurrentSpeed ?? 0)}`}</Text>
-            <Text font={11} foregroundStyle="systemGreen">{`↑${formatSpeed(r.outCurrentSpeed ?? 0)}`}</Text>
+            <Text font={12} foregroundStyle="systemBlue">{`↓${formatSpeed(r.inCurrentSpeed ?? 0)}`}</Text>
+            <Text font={12} foregroundStyle="systemGreen">{`↑${formatSpeed(r.outCurrentSpeed ?? 0)}`}</Text>
           </>
         ) : (
-          <Text font={11} foregroundStyle="secondaryLabel">
+          <Text font={12} foregroundStyle="secondaryLabel">
             {formatBytes((r.inBytes ?? 0) + (r.outBytes ?? 0))}
           </Text>
         )}
       </HStack>
       {r.rule ? (
-        <Text font={10} foregroundStyle="tertiaryLabel" lineLimit={1}>{r.rule}</Text>
+        <Text font={12} foregroundStyle="tertiaryLabel" lineLimit={1}>{r.rule}</Text>
       ) : null}
     </VStack>
   )

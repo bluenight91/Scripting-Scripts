@@ -60,7 +60,7 @@ export function SurgePanelApp() {
             pickerStyle="segmented"
             value={String(current)}
             onChanged={(v: string) => selection.setValue(Number(v))}
-            padding={{ horizontal: 16, top: 6, bottom: 8 }}
+            padding={{ horizontal: 16, top: 8, bottom: 4 }}
           >
             {TAB_TITLES.map((t, i) => (
               <Text key={t} tag={String(i)}>{t}</Text>
