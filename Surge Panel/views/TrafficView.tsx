@@ -12,7 +12,7 @@ import { GradientBar } from "../components/GradientBar"
 import { HomeTitleWrapper } from "../components/HomeTitleWrapper"
 import { PanelCard } from "../components/PanelCard"
 import { StatCard } from "../components/StatCard"
-import { useStore } from "../lib/store"
+import { refreshNow, useStore } from "../lib/store"
 import { formatBytes, formatSpeed, formatSpeedParts } from "../lib/metrics"
 import { UI } from "../lib/ui"
 import type { TrafficEntry } from "../lib/surgeApi"
@@ -61,7 +61,7 @@ export function TrafficView() {
 
   return (
     <HomeTitleWrapper title="流量">
-    <ScrollView axes="vertical">
+    <ScrollView axes="vertical" refreshable={async () => { await refreshNow() }}>
       <VStack alignment="leading" spacing={UI.pageSpacing} padding={UI.pagePadding}>
         {/* 实时合计 */}
         <HStack spacing={12}>
