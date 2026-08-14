@@ -80,7 +80,8 @@ export function PoliciesView() {
     <HomeTitleWrapper title="策略">
     <List
       navigationTitle={Script.env === "home_screen" ? undefined : "策略"}
-      refreshable={load}
+      refreshable={async () => { await load() }}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
     >
       <Section>
         <TextField title="搜索" value={query} onChanged={setQuery} prompt="策略组名称" />

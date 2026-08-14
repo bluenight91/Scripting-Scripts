@@ -120,6 +120,38 @@ export function formatClock(ts: number): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
+/** Surge HTTP API 的 epoch：请求 startDate 等为 Unix 秒；已是毫秒则原样返回 */
+export function surgeTimestampToMs(ts: number): number {
+  if (!Number.isFinite(ts) || ts <= 0) return NaN
+  return ts < 1e12 ? ts * 1000 : ts
+}
+
+export function formatRequestDateTime(ts?: number | null): string {
+  if (ts == null) return "—"
+  const ms = surgeTimestampToMs(ts)
+  if (!Number.isFinite(ms)) return "—"
+  const d = new Date(ms)
+  if (Number.isNaN(d.getTime())) return "—"
+  const p = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
+export function formatRequestClock(ts?: number | null): string {
+  if (ts == null) return ""
+  const ms = surgeTimestampToMs(ts)
+  if (!Number.isFinite(ms)) return ""
+  const d = new Date(ms)
+  if (Number.isNaN(d.getTime())) return ""
+  const p = (n: number) => String(n).padStart(2, "0")
+  const now = new Date()
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  const hms = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  return sameDay ? hms : `${d.getMonth() + 1}-${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 export function formatDelay(ms: number | undefined | null): string {
   if (ms === undefined || ms === null || !Number.isFinite(ms)) return "—"
   return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`
