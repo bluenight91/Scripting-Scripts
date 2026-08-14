@@ -15,14 +15,14 @@ import {
   useObservable,
   VStack,
 } from "scripting"
-import { startPolling, stopPolling } from "./lib/store"
+import { startPolling, stopPolling, registerTabJump } from "./lib/store"
 import { OverviewView } from "./views/OverviewView"
 import { PoliciesView } from "./views/PoliciesView"
 import { TrafficView } from "./views/TrafficView"
 import { NetworkView } from "./views/NetworkView"
 import { SettingsView } from "./views/SettingsView"
 
-const TAB_TITLES = ["总览", "策略", "流量", "网络", "设置"]
+const TAB_TITLES = ["总览", "策略", "流量", "请求", "设置"]
 
 function TabContent({ index }: { index: number }) {
   return index === 0 ? (
@@ -48,6 +48,8 @@ export function SurgePanelApp() {
     startPolling()
     return () => stopPolling()
   }, [])
+
+  useEffect(() => registerTabJump((i) => selection.setValue(i)), [])
 
   // ---------- 首页 Tab：顶部分段选择器 ----------
   if (isHome) {
@@ -130,7 +132,7 @@ export function SurgePanelApp() {
         <Tab title="流量" systemImage="arrow.up.arrow.down" value={2}>
           <TrafficView />
         </Tab>
-        <Tab title="网络" systemImage="network" value={3}>
+        <Tab title="请求" systemImage="list.bullet.rectangle" value={3}>
           <NetworkView />
         </Tab>
         <Tab title="设置" systemImage="gearshape" value={4}>

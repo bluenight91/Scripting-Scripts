@@ -22,9 +22,3 @@ export function HomeTitleWrapper({
     </VStack>
   )
 }
-
-/** 全屏运行时的页内大标题；首页模式由 HomeTitleWrapper / 分段器承担，不再重复 */
-export function FullscreenPageTitle({ title }: { title: string }) {
-  if (Script.env === "home_screen") return null
-  return <Text font={28} fontWeight="bold">{title}</Text>
-}

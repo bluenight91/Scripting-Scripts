@@ -5,12 +5,11 @@ import {
   Image,
   List,
   NavigationLink,
-  NavigationStack,
   ProgressView,
   Script,
   Section,
-  Spacer,
   Text,
+  TextField,
   useEffect,
   useState,
   VStack,
@@ -31,6 +30,7 @@ import {
 import { HomeTitleWrapper } from "../components/HomeTitleWrapper"
 import { formatDelay } from "../lib/metrics"
 import { useStore } from "../lib/store"
+import { connectErrorText } from "../lib/ui"
 
 export function PoliciesView() {
   const state = useStore()
@@ -38,6 +38,7 @@ export function PoliciesView() {
   const [selections, setSelections] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [query, setQuery] = useState("")
 
   async function load() {
     setLoading(true)
@@ -71,12 +72,22 @@ export function PoliciesView() {
     load()
   }, [state.config])
 
+  const names = groups ? Object.keys(groups) : []
+  const q = query.trim().toLowerCase()
+  const filtered = q ? names.filter((n) => n.toLowerCase().includes(q)) : names
+
   return (
     <HomeTitleWrapper title="策略">
-    <List navigationTitle={Script.env === "home_screen" ? undefined : "策略"}>
+    <List
+      navigationTitle={Script.env === "home_screen" ? undefined : "策略"}
+      refreshable={load}
+    >
+      <Section>
+        <TextField title="搜索" value={query} onChanged={setQuery} prompt="策略组名称" />
+      </Section>
       {error ? (
         <Section>
-          <Text foregroundStyle="systemRed">{`加载失败：${error}`}</Text>
+          <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
           <Button title="重试" action={load} />
         </Section>
       ) : null}
@@ -86,8 +97,11 @@ export function PoliciesView() {
         </Section>
       ) : null}
       {groups ? (
-        <Section footer={<Text font={13}>{`${Object.keys(groups).length} 个策略组`}</Text>}>
-          {Object.keys(groups).map((name) => {
+        <Section footer={<Text font={13}>{q ? `${filtered.length} / ${names.length} 个策略组` : `${names.length} 个策略组`}</Text>}>
+          {filtered.length === 0 ? (
+            <Text foregroundStyle="secondaryLabel">{q ? "无匹配策略组" : "暂无策略组"}</Text>
+          ) : (
+            filtered.map((name) => {
             const options = groups[name]
             const selected = selections[name]
             return (
@@ -114,7 +128,8 @@ export function PoliciesView() {
                 </VStack>
               </NavigationLink>
             )
-          })}
+          })
+          )}
         </Section>
       ) : null}
     </List>

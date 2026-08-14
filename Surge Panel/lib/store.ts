@@ -31,6 +31,8 @@ export type Prefs = {
   maxPoints: 180 | 360 | 720
 }
 
+export type RequestsSegment = "active" | "recent" | "events" | "dns" | "rules"
+
 export type StoreState = {
   config: SurgeConfig
   prefs: Prefs
@@ -45,6 +47,7 @@ export type StoreState = {
   history: HistoryPoint[]
   speedHistory: SpeedPoint[]
   traffic: TrafficSnapshot | null
+  requestsSegment: RequestsSegment
 }
 
 const CONFIG_KEY = "surge_panel_config"
@@ -91,6 +94,7 @@ let state: StoreState = {
   history: [],
   speedHistory: emptySpeedHistory(),
   traffic: null,
+  requestsSegment: "active",
 }
 
 const listeners = new Set<() => void>()
@@ -162,6 +166,27 @@ export function clearHistory() {
     speedHistory: emptySpeedHistory(),
     peakSpeeds: { inSpeed: 0, outSpeed: 0 },
   })
+}
+
+// ---------- Tab 跳转（总览事件条 → 请求工作台） ----------
+
+let tabJump: ((index: number) => void) | null = null
+
+export function registerTabJump(fn: (index: number) => void) {
+  tabJump = fn
+  return () => {
+    if (tabJump === fn) tabJump = null
+  }
+}
+
+export function setRequestsSegment(segment: RequestsSegment) {
+  if (state.requestsSegment === segment) return
+  patch({ requestsSegment: segment })
+}
+
+export function openRequestsSegment(segment: RequestsSegment) {
+  patch({ requestsSegment: segment })
+  tabJump?.(3)
 }
 
 // ---------- 实时速率（/v1/traffic，1Hz） ----------

@@ -1,10 +1,11 @@
-// 网络 Tab：活动连接 / 最近请求 / 事件中心 / DNS 缓存
+// 请求 Tab：活动 / 最近 / 事件 / DNS / 规则 顶部分段工作台
 import {
   Button,
   HStack,
   Image,
   List,
   NavigationLink,
+  Picker,
   Script,
   Section,
   Spacer,
@@ -27,30 +28,59 @@ import {
   type SurgeRequest,
 } from "../lib/surgeApi"
 import { formatBytes, formatEventTime, formatSpeed } from "../lib/metrics"
-import { useStore } from "../lib/store"
+import {
+  setRequestsSegment,
+  useStore,
+  type RequestsSegment,
+} from "../lib/store"
 import { HomeTitleWrapper } from "../components/HomeTitleWrapper"
+import { connectErrorText } from "../lib/ui"
 import { RulesView } from "./RulesView"
 
+const SEGMENTS: { id: RequestsSegment; title: string }[] = [
+  { id: "active", title: "活动" },
+  { id: "recent", title: "最近" },
+  { id: "events", title: "事件" },
+  { id: "dns", title: "DNS" },
+  { id: "rules", title: "规则" },
+]
+
 export function NetworkView() {
+  const state = useStore()
+  const segment = state.requestsSegment
+
   return (
-    <HomeTitleWrapper title="网络">
-    <List navigationTitle={Script.env === "home_screen" ? undefined : "网络"}>
-      <Section
-        footer={
-          <Text font={13}>
-            活动连接支持长按终止；最近请求展示规则命中与失败状态。数据来自 Surge HTTP API（/v1/requests、/v1/events、/v1/dns）。
-          </Text>
-        }
-      >
-        <NavigationLink title="活动连接" destination={<ActiveConnectionsView />} />
-        <NavigationLink title="最近请求" destination={<RecentRequestsView />} />
-        <NavigationLink title="事件中心" destination={<EventsView />} />
-        <NavigationLink title="DNS 缓存" destination={<DnsView />} />
-        <NavigationLink title="规则浏览器" destination={<RulesView />} />
-      </Section>
-    </List>
+    <HomeTitleWrapper title="请求">
+      <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+        <Picker
+          label={<Text>请求分段</Text>}
+          pickerStyle="segmented"
+          value={segment}
+          onChanged={(v: string) => setRequestsSegment(v as RequestsSegment)}
+          padding={{ horizontal: 16, top: 8, bottom: 8 }}
+        >
+          {SEGMENTS.map((s) => (
+            <Text key={s.id} tag={s.id}>{s.title}</Text>
+          ))}
+        </Picker>
+        {segment === "active" ? (
+          <ActiveConnectionsView />
+        ) : segment === "recent" ? (
+          <RecentRequestsView />
+        ) : segment === "events" ? (
+          <EventsView />
+        ) : segment === "dns" ? (
+          <DnsView />
+        ) : (
+          <RulesView />
+        )}
+      </VStack>
     </HomeTitleWrapper>
   )
+}
+
+function listTitle(title: string): string | undefined {
+  return Script.env === "home_screen" ? undefined : title
 }
 
 // ---------- 活动连接 ----------
@@ -72,18 +102,19 @@ function ActiveConnectionsView() {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [state.config])
 
   return (
     <List
-      navigationTitle="活动连接"
+      navigationTitle={listTitle("活动连接")}
+      refreshable={load}
       toolbar={{
         topBarTrailing: <Button title="刷新" systemImage="arrow.clockwise" action={load} />,
       }}
     >
       {error ? (
         <Section>
-          <Text foregroundStyle="systemRed">{error}</Text>
+          <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
         </Section>
       ) : null}
       {requests === null ? (
@@ -95,7 +126,7 @@ function ActiveConnectionsView() {
           <Text foregroundStyle="secondaryLabel">当前没有活动连接</Text>
         </Section>
       ) : (
-        <Section footer={<Text font={12}>点按查看详情，详情页可终止连接</Text>}>
+        <Section footer={<Text font={12}>点按查看详情，详情页可终止连接；下拉可刷新</Text>}>
           {requests.map((r) => (
             <NavigationLink key={r.id} destination={<RequestDetailView r={r} active onKilled={load} />}>
               <RequestRow r={r} active />
@@ -126,23 +157,28 @@ function RecentRequestsView() {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [state.config])
 
   return (
     <List
-      navigationTitle="最近请求"
+      navigationTitle={listTitle("最近请求")}
+      refreshable={load}
       toolbar={{
         topBarTrailing: <Button title="刷新" systemImage="arrow.clockwise" action={load} />,
       }}
     >
       {error ? (
         <Section>
-          <Text foregroundStyle="systemRed">{error}</Text>
+          <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
         </Section>
       ) : null}
       {requests === null ? (
         <Section>
           <Text foregroundStyle="secondaryLabel">加载中…</Text>
+        </Section>
+      ) : requests.length === 0 ? (
+        <Section>
+          <Text foregroundStyle="secondaryLabel">暂无最近请求</Text>
         </Section>
       ) : (
         <Section>
@@ -335,18 +371,19 @@ function EventsView() {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [state.config])
 
   return (
     <List
-      navigationTitle="事件中心"
+      navigationTitle={listTitle("事件中心")}
+      refreshable={load}
       toolbar={{
         topBarTrailing: <Button title="刷新" systemImage="arrow.clockwise" action={load} />,
       }}
     >
       {error ? (
         <Section>
-          <Text foregroundStyle="systemRed">{error}</Text>
+          <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
         </Section>
       ) : null}
       {events === null ? (
@@ -415,7 +452,7 @@ function DnsView() {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [state.config])
 
   async function doFlush() {
     try {
@@ -429,7 +466,8 @@ function DnsView() {
 
   return (
     <List
-      navigationTitle="DNS 缓存"
+      navigationTitle={listTitle("DNS 缓存")}
+      refreshable={load}
       confirmationDialog={{
         isPresented: showFlush,
         onChanged: setShowFlush,
@@ -455,7 +493,7 @@ function DnsView() {
       </Section>
       {error ? (
         <Section>
-          <Text foregroundStyle="systemRed">{error}</Text>
+          <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
         </Section>
       ) : null}
       {cache === null ? (
