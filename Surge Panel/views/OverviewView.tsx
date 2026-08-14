@@ -46,9 +46,8 @@ export function OverviewView() {
   const dns = state.samples ? gaugeValue(state.samples, "surge_dns_cache_entries") : null
   const bans = state.samples ? gaugeValue(state.samples, "surge_active_bans") : null
   const info = state.samples ? buildInfo(state.samples) : null
-  // 历史峰值速度
-  const peakIn = state.history.reduce((m, p) => Math.max(m, p.inSpeed), 0)
-  const peakOut = state.history.reduce((m, p) => Math.max(m, p.outSpeed), 0)
+  const peakIn = state.peakSpeeds.inSpeed
+  const peakOut = state.peakSpeeds.outSpeed
 
   const chartPts = downsample(state.history, 60)
   const marks = chartPts.map((p) => ({
@@ -64,10 +63,8 @@ export function OverviewView() {
 
   // 实时速率双线（KB/s）：foregroundStyleBy 是官方的多序列写法；
   // 两个 LineChart 子组件会被串成一条折线（实测出现连接线伪影），必须用单 LineChart + 序列编码
-  const latestT = state.history.length ? state.history[state.history.length - 1].t : 0
-  const speedWindow = state.history.filter((p) => p.t >= latestT - 15 * 60 * 1000)
-  const speedPts = downsample(speedWindow, 60)
-  const speedMarks = speedPts.flatMap((p) => [
+  // 数据来自 /v1/traffic 的 1Hz 滑动窗口（与 yasd 一致），不再从 15 分钟粗采样里降采样
+  const speedMarks = state.speedHistory.flatMap((p) => [
     {
       label: new Date(p.t),
       value: Math.round((p.inSpeed ?? 0) / 102.4) / 10,
@@ -200,9 +197,9 @@ export function OverviewView() {
           <HStack>
             <Text font={15} fontWeight="semibold">实时速率</Text>
             <Spacer />
-            <Text font={11} foregroundStyle="secondaryLabel">KB/s · 近 15 分钟</Text>
+            <Text font={11} foregroundStyle="secondaryLabel">KB/s · 1 秒采样 · 近 1 分钟</Text>
           </HStack>
-          {speedMarks.length >= 4 ? (
+          {state.traffic && speedMarks.length >= 4 ? (
             <Chart frame={{ height: 150 }}>
               <LineChart marks={speedMarks} />
             </Chart>
