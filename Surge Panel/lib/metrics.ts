@@ -77,7 +77,12 @@ export function buildInfo(
 // ---------- 格式化 ----------
 
 export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes)) return "—"
+  const { value, unit } = formatBytesParts(bytes)
+  return unit ? `${value} ${unit}` : value
+}
+
+export function formatBytesParts(bytes: number): { value: string; unit: string } {
+  if (!Number.isFinite(bytes)) return { value: "—", unit: "" }
   const units = ["B", "KB", "MB", "GB", "TB"]
   let v = Math.abs(bytes)
   let i = 0
@@ -86,11 +91,18 @@ export function formatBytes(bytes: number): string {
     i++
   }
   const text = v >= 100 || i === 0 ? v.toFixed(0) : v.toFixed(1)
-  return `${bytes < 0 ? "-" : ""}${text} ${units[i]}`
+  return { value: `${bytes < 0 ? "-" : ""}${text}`, unit: units[i] }
 }
 
 export function formatSpeed(bytesPerSec: number): string {
-  return `${formatBytes(bytesPerSec)}/s`
+  const { value, unit } = formatSpeedParts(bytesPerSec)
+  return unit ? `${value} ${unit}` : value
+}
+
+export function formatSpeedParts(bytesPerSec: number): { value: string; unit: string } {
+  const p = formatBytesParts(bytesPerSec)
+  if (!p.unit) return p
+  return { value: p.value, unit: `${p.unit}/s` }
 }
 
 export function formatUptime(seconds: number): string {

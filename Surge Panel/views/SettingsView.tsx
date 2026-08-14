@@ -214,7 +214,7 @@ export function SettingsView() {
       }}
     >
       {/* 连接 */}
-      <Section header={<Text>连接</Text>} footer={saved ? <Text font={12} foregroundStyle="systemGreen">已保存并重新连接</Text> : undefined}>
+      <Section header={<Text>连接</Text>} footer={saved ? <Text font={13} foregroundStyle="systemGreen">已保存并重新连接</Text> : <Text font={13}>填写 Surge HTTP API 地址与 Key 后保存。默认端口 6166。</Text>}>
         <Picker title="协议" pickerStyle="segmented" value={protocol} onChanged={(v: string) => setProtocol(v as "http" | "https")}>
           <Text tag="https">https</Text>
           <Text tag="http">http</Text>
@@ -228,7 +228,7 @@ export function SettingsView() {
       {/* 偏好 */}
       <Section
         header={<Text>偏好</Text>}
-        footer={<Text font={12}>刷新间隔用于内存趋势与引擎指标。实时速率图固定 1 秒采样（/v1/traffic），与 Surge Web Dashboard 一致。</Text>}
+        footer={<Text font={13}>刷新间隔用于内存趋势与引擎指标。实时速率图固定 1 秒采样（/v1/traffic），与 Surge Web Dashboard 一致。</Text>}
       >
         <Toggle
           title="自动刷新"
@@ -322,7 +322,7 @@ export function SettingsView() {
       </Section>
 
       {/* 危险区 */}
-      <Section header={<Text>引擎</Text>} footer={actionMsg ? <Text font={12}>{actionMsg}</Text> : undefined}>
+      <Section header={<Text>引擎</Text>} footer={actionMsg ? <Text font={13}>{actionMsg}</Text> : undefined}>
         <NavigationLink title="查看当前配置" destination={<ProfileView />} />
         <Button title="重新加载配置" systemImage="arrow.triangle.2.circlepath" action={() => setConfirm("reload")} />
         <Button title="停止引擎" role="destructive" systemImage="stop.circle" action={() => setConfirm("stop")} />
@@ -360,7 +360,7 @@ function ProfileView() {
         ) : profile === null ? (
           <Text foregroundStyle="secondaryLabel">加载中…</Text>
         ) : (
-          <Text font={10}>{profile}</Text>
+          <Text font={12} monospaced>{profile}</Text>
         )}
       </VStack>
     </ScrollView>

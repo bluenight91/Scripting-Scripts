@@ -8,6 +8,7 @@ import {
   Image,
   LineChart,
   Navigation,
+  Script,
   ScrollView,
   Spacer,
   Text,
@@ -18,9 +19,9 @@ import { StatCard } from "../components/StatCard"
 import { useStore, type HistoryPoint } from "../lib/store"
 import {
   buildInfo,
-  formatBytes,
+  formatBytesParts,
   formatClock,
-  formatSpeed,
+  formatSpeedParts,
   formatUptime,
   gaugeValue,
 } from "../lib/metrics"
@@ -51,7 +52,7 @@ function niceUpper(n: number): number {
   return nice * mag
 }
 
-const LINE_STYLE = { lineWidth: 2, lineCap: "round" as const, lineJoin: "round" as const }
+const LINE_STYLE = { lineWidth: 2.5, lineCap: "round" as const, lineJoin: "round" as const }
 
 export function OverviewView() {
   const state = useStore()
@@ -65,6 +66,12 @@ export function OverviewView() {
   const info = state.samples ? buildInfo(state.samples) : null
   const peakIn = state.peakSpeeds.inSpeed
   const peakOut = state.peakSpeeds.outSpeed
+  const memParts = mem !== null ? formatBytesParts(mem) : null
+  const downParts = state.running ? formatSpeedParts(state.speeds.inSpeed) : null
+  const upParts = state.running ? formatSpeedParts(state.speeds.outSpeed) : null
+  const peakInParts = peakIn > 0 ? formatSpeedParts(peakIn) : null
+  const peakOutParts = peakOut > 0 ? formatSpeedParts(peakOut) : null
+  const isHome = Script.env === "home_screen"
 
   const chartPts = downsample(state.history, 60)
   const memValues = chartPts.map((p) => Math.round((p.mem / (1024 * 1024)) * 10) / 10)
@@ -112,30 +119,30 @@ export function OverviewView() {
         content: <MemoryDiagView />,
       }}
     >
-      <VStack alignment="leading" spacing={14} padding={16}>
+      <VStack alignment="leading" spacing={16} padding={16}>
         {/* 头部 */}
         <HStack>
-          <VStack alignment="leading" spacing={2}>
+          <VStack alignment="leading" spacing={3}>
             <HStack spacing={8}>
-              <Text font={28} fontWeight="bold">Surge</Text>
+              <Text font={isHome ? 22 : 28} fontWeight="bold">Surge</Text>
               {state.error ? (
                 <HStack spacing={4}>
                   <Image systemName="circle.fill" foregroundStyle="systemRed" font={8} />
-                  <Text font={12} foregroundStyle="systemRed">连接失败</Text>
+                  <Text font={13} foregroundStyle="systemRed">连接失败</Text>
                 </HStack>
               ) : state.running ? (
                 <HStack spacing={4}>
                   <Image systemName="circle.fill" foregroundStyle="systemGreen" font={8} />
-                  <Text font={12} foregroundStyle="systemGreen">运行中</Text>
+                  <Text font={13} foregroundStyle="systemGreen">运行中</Text>
                 </HStack>
               ) : (
                 <HStack spacing={4}>
                   <Image systemName="circle.fill" foregroundStyle="secondaryLabel" font={8} />
-                  <Text font={12} foregroundStyle="secondaryLabel">连接中</Text>
+                  <Text font={13} foregroundStyle="secondaryLabel">连接中</Text>
                 </HStack>
               )}
             </HStack>
-            <Text font={12} foregroundStyle="secondaryLabel">
+            <Text font={13} foregroundStyle="secondaryLabel">
               {state.updatedAt ? `更新于 ${formatClock(state.updatedAt)}` : "正在连接…"}
             </Text>
           </VStack>
@@ -143,25 +150,25 @@ export function OverviewView() {
           {info ? (
             <VStack alignment="trailing" spacing={2}>
               <Text font={13} foregroundStyle="secondaryLabel">{`v${info.version}`}</Text>
-              <Text font={11} foregroundStyle="tertiaryLabel">{`Build ${info.build}`}</Text>
+              <Text font={12} foregroundStyle="tertiaryLabel">{`Build ${info.build}`}</Text>
             </VStack>
           ) : null}
         </HStack>
 
         {state.error ? (
-          <Text font={12} foregroundStyle="systemRed">
+          <Text font={13} foregroundStyle="systemRed">
             {`连接错误：${state.error}（请到「设置」检查地址与 Key）`}
           </Text>
         ) : null}
 
-        {/* 2×2 卡片 */}
-        <VStack spacing={10}>
-          <HStack spacing={10}>
+        <VStack spacing={12}>
+          <HStack spacing={12}>
             <StatCard
               icon="memorychip.fill"
               iconColor="systemPurple"
               title="内存"
-              value={mem !== null ? formatBytes(mem) : "—"}
+              value={memParts ? memParts.value : "—"}
+              unit={memParts?.unit}
               subtitle="长按查看诊断"
               contextMenuItems={
                 <Button title="内存诊断" systemImage="stethoscope" action={() => setShowDiag(true)} />
@@ -175,23 +182,25 @@ export function OverviewView() {
               subtitle={info ? `Surge ${info.version}` : undefined}
             />
           </HStack>
-          <HStack spacing={10}>
+          <HStack spacing={12}>
             <StatCard
               icon="arrow.down.circle.fill"
               iconColor="systemBlue"
               title="实时下载"
-              value={state.running ? formatSpeed(state.speeds.inSpeed) : "—"}
-              subtitle={peakIn > 0 ? `峰值 ${formatSpeed(peakIn)}` : "全部网络接口"}
+              value={downParts ? downParts.value : "—"}
+              unit={downParts?.unit}
+              subtitle={peakInParts ? `峰值 ${peakInParts.value} ${peakInParts.unit}` : "全部网络接口"}
             />
             <StatCard
               icon="arrow.up.circle.fill"
               iconColor="systemGreen"
               title="实时上传"
-              value={state.running ? formatSpeed(state.speeds.outSpeed) : "—"}
-              subtitle={peakOut > 0 ? `峰值 ${formatSpeed(peakOut)}` : "全部网络接口"}
+              value={upParts ? upParts.value : "—"}
+              unit={upParts?.unit}
+              subtitle={peakOutParts ? `峰值 ${peakOutParts.value} ${peakOutParts.unit}` : "全部网络接口"}
             />
           </HStack>
-          <HStack spacing={10}>
+          <HStack spacing={12}>
             <StatCard
               icon="link.circle.fill"
               iconColor="systemOrange"
@@ -221,13 +230,14 @@ export function OverviewView() {
           <HStack>
             <Text font={15} fontWeight="semibold">实时速率</Text>
             <Spacer />
-            <Text font={11} foregroundStyle="secondaryLabel">KB/s · 1 秒采样 · 近 1 分钟</Text>
+            <Text font={12} foregroundStyle="secondaryLabel">KB/s · 1 秒采样 · 近 1 分钟</Text>
           </HStack>
           {state.traffic && speedMarks.length >= 4 ? (
             <Chart
               frame={{ height: 168 }}
               chartYScale={{ domain: { from: 0, to: speedYMax }, type: "linear" }}
-              chartLegend={{ position: "bottom", spacing: 4 }}
+              chartXAxis={{ valueLabel: { format: "time" } }}
+              chartLegend={{ position: "bottom", spacing: 6 }}
               chartForegroundStyleScale={{
                 "下载": "systemBlue",
                 "上传": "systemGreen",
@@ -251,7 +261,7 @@ export function OverviewView() {
           <HStack>
             <Text font={15} fontWeight="semibold">内存历史</Text>
             <Spacer />
-            <Text font={11} foregroundStyle="secondaryLabel">{`${state.history.length} 个采样点`}</Text>
+            <Text font={12} foregroundStyle="secondaryLabel">{`${state.history.length} 个采样点`}</Text>
           </HStack>
           {marks.length >= 2 ? (
             <Chart
@@ -289,8 +299,8 @@ export function OverviewView() {
 function HealthItem({ label, value }: { label: string; value: string }) {
   return (
     <VStack spacing={4} frame={{ maxWidth: "infinity" }}>
-      <Text font={18} fontWeight="semibold">{value}</Text>
-      <Text font={11} foregroundStyle="secondaryLabel">{label}</Text>
+      <Text font={17} fontWeight="semibold">{value}</Text>
+      <Text font={12} foregroundStyle="secondaryLabel">{label}</Text>
     </VStack>
   )
 }
