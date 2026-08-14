@@ -6,13 +6,21 @@ import {
   getRecentRequests,
   getTraffic,
   type SurgeConfig,
+  type TrafficEntry,
   type TrafficSnapshot,
 } from "./surgeApi"
-import { gaugeValue, seriesByLabel, type MetricSample } from "./metrics"
+import { gaugeValue, type MetricSample } from "./metrics"
 
 export type HistoryPoint = {
   t: number
   mem: number
+  inSpeed: number
+  outSpeed: number
+}
+
+/** 实时速率点（内存中滑动窗口，不持久化） */
+export type SpeedPoint = {
+  t: number
   inSpeed: number
   outSpeed: number
 }
@@ -32,8 +40,10 @@ export type StoreState = {
   error: string | null
   running: boolean
   speeds: { inSpeed: number; outSpeed: number }
+  peakSpeeds: { inSpeed: number; outSpeed: number }
   failedRecent: number
   history: HistoryPoint[]
+  speedHistory: SpeedPoint[]
   traffic: TrafficSnapshot | null
 }
 
@@ -43,7 +53,29 @@ const HISTORY_KEY = "surge_panel_history"
 
 const DEFAULT_PREFS: Prefs = { autoRefresh: true, intervalSec: 5, maxPoints: 720 }
 
+// 对齐 yasd（Surge Web Dashboard）：/v1/traffic 1Hz + 60 点滑动窗口
+export const SPEED_REFRESH_MS = 1000
+export const SPEED_HISTORY_SIZE = 60
+
 // ---------- 内部状态 ----------
+
+function emptySpeedHistory(now = Date.now()): SpeedPoint[] {
+  const out: SpeedPoint[] = []
+  for (let i = SPEED_HISTORY_SIZE; i >= 1; i--) {
+    out.push({ t: now - i * SPEED_REFRESH_MS, inSpeed: 0, outSpeed: 0 })
+  }
+  return out
+}
+
+function maxSpeedFromHistory(history: HistoryPoint[]): { inSpeed: number; outSpeed: number } {
+  let inSpeed = 0
+  let outSpeed = 0
+  for (const p of history) {
+    if (p.inSpeed > inSpeed) inSpeed = p.inSpeed
+    if (p.outSpeed > outSpeed) outSpeed = p.outSpeed
+  }
+  return { inSpeed, outSpeed }
+}
 
 let state: StoreState = {
   config: DEFAULT_CONFIG,
@@ -54,15 +86,19 @@ let state: StoreState = {
   error: null,
   running: false,
   speeds: { inSpeed: 0, outSpeed: 0 },
+  peakSpeeds: { inSpeed: 0, outSpeed: 0 },
   failedRecent: 0,
   history: [],
+  speedHistory: emptySpeedHistory(),
   traffic: null,
 }
 
 const listeners = new Set<() => void>()
 let pollTimer: ReturnType<typeof setTimeout> | null = null
+let speedTimer: ReturnType<typeof setTimeout> | null = null
 let tickCount = 0
 let started = false
+let trafficInFlight = false
 
 function emit() {
   listeners.forEach((f) => f())
@@ -97,10 +133,13 @@ export function initStore() {
   const savedConfig = Storage.get(CONFIG_KEY) as SurgeConfig | null
   const savedPrefs = Storage.get(PREFS_KEY) as Prefs | null
   const savedHistory = Storage.get(HISTORY_KEY) as HistoryPoint[] | null
+  const history = Array.isArray(savedHistory) ? savedHistory : []
   patch({
     config: savedConfig ?? DEFAULT_CONFIG,
     prefs: savedPrefs ?? DEFAULT_PREFS,
-    history: Array.isArray(savedHistory) ? savedHistory : [],
+    history,
+    speedHistory: emptySpeedHistory(),
+    peakSpeeds: maxSpeedFromHistory(history),
   })
 }
 
@@ -118,53 +157,89 @@ export function savePrefs(prefs: Prefs) {
 
 export function clearHistory() {
   Storage.remove(HISTORY_KEY)
-  patch({ history: [] })
+  patch({
+    history: [],
+    speedHistory: emptySpeedHistory(),
+    peakSpeeds: { inSpeed: 0, outSpeed: 0 },
+  })
 }
 
-// ---------- 采样 ----------
+// ---------- 实时速率（/v1/traffic，1Hz） ----------
 
-function sumInterfaceCounters(samples: MetricSample[]): { inB: number; outB: number } {
-  const inB = seriesByLabel(samples, "surge_interface_in_bytes_total", "interface").reduce(
-    (a, s) => a + s.value,
-    0
-  )
-  const outB = seriesByLabel(samples, "surge_interface_out_bytes_total", "interface").reduce(
-    (a, s) => a + s.value,
-    0
-  )
-  return { inB, outB }
+function aggregateCurrentSpeeds(entries: Record<string, TrafficEntry>): {
+  inSpeed: number
+  outSpeed: number
+} {
+  let inSpeed = 0
+  let outSpeed = 0
+  for (const name in entries) {
+    const e = entries[name]
+    inSpeed += e.inCurrentSpeed
+    outSpeed += e.outCurrentSpeed
+  }
+  return { inSpeed, outSpeed }
 }
 
-function computeSpeed(
-  cur: number,
-  prev: number | null,
-  dtSec: number
-): number {
-  if (prev === null || dtSec <= 0) return 0
-  const delta = cur >= prev ? cur - prev : cur // 计数器归零（引擎重启）视为从 0 重新累计
-  return delta / dtSec
+async function tickTraffic() {
+  if (trafficInFlight) return
+  trafficInFlight = true
+  const t0 = Date.now()
+  try {
+    const traffic = await getTraffic(state.config)
+    const source =
+      traffic.interface && Object.keys(traffic.interface).length > 0
+        ? traffic.interface
+        : traffic.connector
+    const { inSpeed, outSpeed } = aggregateCurrentSpeeds(source ?? {})
+    const now = Date.now()
+    const nextHistory = state.speedHistory.slice()
+    nextHistory.push({ t: now, inSpeed, outSpeed })
+    while (nextHistory.length > SPEED_HISTORY_SIZE) nextHistory.shift()
+    patch({
+      traffic,
+      speeds: { inSpeed, outSpeed },
+      speedHistory: nextHistory,
+      peakSpeeds: {
+        inSpeed: Math.max(state.peakSpeeds.inSpeed, inSpeed),
+        outSpeed: Math.max(state.peakSpeeds.outSpeed, outSpeed),
+      },
+      running: true,
+      updatedAt: now,
+    })
+  } catch (e) {
+    if (!state.samples) {
+      patch({ error: String(e), running: false, updatedAt: Date.now() })
+    }
+  } finally {
+    trafficInFlight = false
+  }
+  return Date.now() - t0
 }
+
+function armTraffic(delay: number) {
+  if (!started || !state.prefs.autoRefresh) return
+  speedTimer = setTimeout(async () => {
+    if (!started || !state.prefs.autoRefresh) return
+    const elapsed = (await tickTraffic()) ?? 0
+    armTraffic(Math.max(0, SPEED_REFRESH_MS - elapsed))
+  }, delay)
+}
+
+// ---------- 指标采样（内存 / Prometheus，用户间隔） ----------
 
 async function tick() {
-  const { config, prefs, samples: prev, updatedAt: prevAt, history } = state
+  const { config, prefs, samples: prev, history, speeds } = state
   const now = Date.now()
   try {
     const samples = await fetchMetrics(config)
-    // /v1/traffic 提供各策略/接口的实时速度与峰值（Prometheus 只有累计计数）
-    let traffic: TrafficSnapshot | null = null
-    try {
-      traffic = await getTraffic(config)
-    } catch {
-      traffic = state.traffic
-    }
-    const { inB, outB } = sumInterfaceCounters(samples)
-    const dt = prev && prevAt ? (now - prevAt) / 1000 : 0
-    const prevAgg = prev ? sumInterfaceCounters(prev) : null
-    const inSpeed = computeSpeed(inB, prevAgg ? prevAgg.inB : null, dt)
-    const outSpeed = computeSpeed(outB, prevAgg ? prevAgg.outB : null, dt)
     const mem = gaugeValue(samples, "surge_memory_bytes") ?? 0
 
-    const point: HistoryPoint = { t: now, mem, inSpeed, outSpeed }
+    const point: HistoryPoint = {
+      t: now,
+      mem,
+      inSpeed: speeds.inSpeed,
+      outSpeed: speeds.outSpeed,
+    }
     const newHistory = [...history, point]
     while (newHistory.length > prefs.maxPoints) newHistory.shift()
     Storage.set(HISTORY_KEY, newHistory)
@@ -175,12 +250,14 @@ async function tick() {
       updatedAt: now,
       error: null,
       running: true,
-      speeds: { inSpeed, outSpeed },
       history: newHistory,
-      traffic,
     })
   } catch (e) {
-    patch({ error: String(e), running: false, updatedAt: now })
+    patch({
+      error: String(e),
+      running: state.traffic !== null,
+      updatedAt: now,
+    })
   }
 
   // 每 3 个采样周期统计一次近期失败请求数
@@ -203,31 +280,38 @@ function scheduleNext() {
   }, state.prefs.intervalSec * 1000)
 }
 
-function restartPolling() {
+function clearTimers() {
   if (pollTimer) {
     clearTimeout(pollTimer)
     pollTimer = null
   }
+  if (speedTimer) {
+    clearTimeout(speedTimer)
+    speedTimer = null
+  }
+}
+
+function restartPolling() {
+  clearTimers()
   scheduleNext()
+  armTraffic(SPEED_REFRESH_MS)
 }
 
 export async function startPolling() {
   if (started) return
   started = true
-  await tick()
+  await Promise.all([tick(), tickTraffic()])
   scheduleNext()
+  armTraffic(SPEED_REFRESH_MS)
 }
 
 export function stopPolling() {
   started = false
-  if (pollTimer) {
-    clearTimeout(pollTimer)
-    pollTimer = null
-  }
+  clearTimers()
 }
 
 export async function refreshNow() {
-  await tick()
+  await Promise.all([tick(), tickTraffic()])
 }
 
 // ---------- 内存趋势诊断 ----------

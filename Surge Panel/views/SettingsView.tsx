@@ -226,7 +226,10 @@ export function SettingsView() {
       </Section>
 
       {/* 偏好 */}
-      <Section header={<Text>偏好</Text>}>
+      <Section
+        header={<Text>偏好</Text>}
+        footer={<Text font={12}>刷新间隔用于内存趋势与引擎指标。实时速率图固定 1 秒采样（/v1/traffic），与 Surge Web Dashboard 一致。</Text>}
+      >
         <Toggle
           title="自动刷新"
           value={state.prefs.autoRefresh}
