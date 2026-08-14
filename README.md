@@ -13,4 +13,7 @@ Surge 监控面板：通过 Surge HTTP API + Prometheus Metrics Endpoint 提供�
 - 策略组切换/测速、活动连接管理、请求详情、DNS 缓存/测速、规则浏览器
 - 出站模式/全局策略/日志级别/脚本管理/查看当前配置
 
-**安装**：下载打包好的 [`Surge Panel.scripting`](./Surge%20Panel.scripting)，用 Scripting 打开即可导入。
+**安装**（任选其一）：
+
+- **一键导入**（需已安装 [Scripting](https://scriptingapp.github.io/zh/index)）：[在 Scripting 中打开 Surge Panel](https://www.scripting.fun/import_scripts/?urls=%5B%22https%3A%2F%2Fgithub.com%2Fbluenight91%2FScripting-Scripts%2Ftree%2Fmain%2FSurge%2520Panel%22%5D)
+- **打包文件**：下载 [`Surge Panel.scripting`](./Surge%20Panel.scripting)，用 Scripting 打开即可导入。
