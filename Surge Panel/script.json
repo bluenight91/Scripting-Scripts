@@ -1,0 +1,29 @@
+{
+  "intentInputTypes" : [
+
+  ],
+  "version" : "1.0.0",
+  "iconImage" : "",
+  "icon" : "gauge.with.needle.fill",
+  "author" : {
+    "homepage" : null,
+    "email" : "still.bag7241@fastmail.com",
+    "name" : "Daniel"
+  },
+  "entry" : "index.tsx",
+  "contributors" : [
+
+  ],
+  "permissions" : null,
+  "remoteResource" : null,
+  "localizedNames" : {
+    "zh" : "Surge 面板"
+  },
+  "color" : "rgba(28, 140, 255, 1)",
+  "localizedDescriptions" : {
+    "zh" : "Surge 监控面板：内存趋势、实时网速、策略组管理、流量排行与请求诊断（基于 Surge HTTP API）。"
+  },
+  "name" : "Surge Panel",
+  "runInApp" : false,
+  "description" : "Surge monitoring panel: memory trend, realtime speed, policy groups, traffic ranking and request diagnostics via Surge HTTP API."
+}
