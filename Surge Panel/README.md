@@ -12,7 +12,10 @@
 
 ## 使用
 
-1. 将整个 `Surge Panel` 目录放入 Scripting 的脚本目录
+1. **导入脚本**（任选其一）：
+   - **一键导入**：[在 Scripting 中打开 Surge Panel](https://www.scripting.fun/import_scripts/?urls=%5B%22https%3A%2F%2Fgithub.com%2Fbluenight91%2FScripting-Scripts%2Ftree%2Fmain%2FSurge%2520Panel%22%5D)
+   - 下载仓库根目录的 [`Surge Panel.scripting`](../Surge%20Panel.scripting)，用 Scripting 打开
+   - 或将整个 `Surge Panel` 目录放入 Scripting 的脚本目录
 2. 在 Surge 中开启 HTTP API（`http-api = 0.0.0.0:6166` + `http-api-key`）与 Prometheus Metrics Endpoint
 3. 首次运行在「设置」页填写 API 地址与 Key
 4. 可选：Scripting 设置 → Show Home Tab → 选择本脚本，首页直接使用
