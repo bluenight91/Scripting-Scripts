@@ -1,5 +1,6 @@
 // 圆角统计卡片
 import { HStack, Image, Spacer, Text, VStack, type Color, type VirtualNode } from "scripting"
+import { UI, cardBackground } from "../lib/ui"
 
 export function StatCard({
   icon,
@@ -24,9 +25,9 @@ export function StatCard({
     <VStack
       alignment="leading"
       spacing={8}
-      padding={{ horizontal: 14, vertical: 12 }}
+      padding={{ horizontal: UI.cardPadding, vertical: 12 }}
       frame={{ maxWidth: "infinity", alignment: "leading" }}
-      background={{ style: "rgba(128,128,128,0.14)", shape: { type: "rect", cornerRadius: 16, style: "continuous" } }}
+      background={cardBackground()}
       contextMenu={contextMenuItems ? { menuItems: contextMenuItems } : undefined}
     >
       <HStack spacing={6}>
@@ -36,21 +37,21 @@ export function StatCard({
         </Text>
       </HStack>
       <HStack spacing={4}>
-        <Text font={22} fontWeight="bold" lineLimit={1} minScaleFactor={0.7}>{value}</Text>
+        <Text font={UI.valueFont} fontWeight="bold" lineLimit={1} minScaleFactor={0.7}>{value}</Text>
         {unit ? (
-          <Text font={13} fontWeight="medium" foregroundStyle="secondaryLabel">{unit}</Text>
+          <Text font={UI.unitFont} fontWeight="medium" foregroundStyle="secondaryLabel">{unit}</Text>
         ) : null}
       </HStack>
       {subtitle || badge ? (
         <HStack spacing={6}>
           {subtitle ? (
-            <Text font={12} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.8}>
+            <Text font={UI.captionFont} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.8}>
               {subtitle}
             </Text>
           ) : null}
           <Spacer />
           {badge ? (
-            <Text font={12} fontWeight="medium" foregroundStyle="systemRed" lineLimit={1}>
+            <Text font={UI.captionFont} fontWeight="medium" foregroundStyle="systemRed" lineLimit={1}>
               {badge}
             </Text>
           ) : null}

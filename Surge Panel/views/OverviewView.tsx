@@ -7,24 +7,34 @@ import {
   HStack,
   Image,
   LineChart,
-  Navigation,
+  Picker,
   Script,
   ScrollView,
   Spacer,
   Text,
+  useEffect,
   useState,
   VStack,
 } from "scripting"
+import { PanelCard } from "../components/PanelCard"
 import { StatCard } from "../components/StatCard"
-import { useStore, type HistoryPoint } from "../lib/store"
+import { openRequestsSegment, useStore, type HistoryPoint } from "../lib/store"
+import {
+  getEvents,
+  getOutboundMode,
+  setOutboundMode,
+  type SurgeEvent,
+} from "../lib/surgeApi"
 import {
   buildInfo,
   formatBytesParts,
   formatClock,
+  formatEventTime,
   formatSpeedParts,
   formatUptime,
   gaugeValue,
 } from "../lib/metrics"
+import { connectErrorText, UI, cardBackground } from "../lib/ui"
 import { MemoryDiagView } from "./MemoryDiagView"
 
 /** 图表降采样到最多 n 个点 */
@@ -57,6 +67,9 @@ const LINE_STYLE = { lineWidth: 2.5, lineCap: "round" as const, lineJoin: "round
 export function OverviewView() {
   const state = useStore()
   const [showDiag, setShowDiag] = useState(false)
+  const [outbound, setOutbound] = useState<string | null>(null)
+  const [outboundError, setOutboundError] = useState<string | null>(null)
+  const [events, setEvents] = useState<SurgeEvent[] | null>(null)
 
   const mem = state.samples ? gaugeValue(state.samples, "surge_memory_bytes") : null
   const uptime = state.samples ? gaugeValue(state.samples, "surge_uptime_seconds") : null
@@ -72,6 +85,50 @@ export function OverviewView() {
   const peakInParts = peakIn > 0 ? formatSpeedParts(peakIn) : null
   const peakOutParts = peakOut > 0 ? formatSpeedParts(peakOut) : null
   const isHome = Script.env === "home_screen"
+
+  useEffect(() => {
+    let cancelled = false
+    getOutboundMode(state.config)
+      .then((r) => {
+        if (cancelled) return
+        setOutbound(r.mode)
+        setOutboundError(null)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setOutbound(null)
+        setOutboundError(String(e))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [state.config])
+
+  useEffect(() => {
+    let cancelled = false
+    getEvents(state.config)
+      .then((r) => {
+        if (!cancelled) setEvents(r.events.slice().reverse())
+      })
+      .catch(() => {
+        if (!cancelled) setEvents(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [state.config, state.samples])
+
+  async function changeOutbound(mode: string) {
+    const prev = outbound
+    setOutbound(mode)
+    try {
+      await setOutboundMode(state.config, mode)
+      setOutboundError(null)
+    } catch (e) {
+      setOutbound(prev)
+      setOutboundError(String(e))
+    }
+  }
 
   const chartPts = downsample(state.history, 60)
   const memValues = chartPts.map((p) => Math.round((p.mem / (1024 * 1024)) * 10) / 10)
@@ -110,6 +167,8 @@ export function OverviewView() {
     Math.max(0, ...state.speedHistory.flatMap((p) => [toKbps(p.inSpeed), toKbps(p.outSpeed)]))
   )
 
+  const latestEvent = events && events.length > 0 ? events[0] : null
+
   return (
     <ScrollView
       axes="vertical"
@@ -119,8 +178,8 @@ export function OverviewView() {
         content: <MemoryDiagView />,
       }}
     >
-      <VStack alignment="leading" spacing={16} padding={16}>
-        {/* 头部 */}
+      <VStack alignment="leading" spacing={UI.pageSpacing} padding={UI.pagePadding}>
+        {/* 品牌头（不是页名） */}
         <HStack>
           <VStack alignment="leading" spacing={3}>
             <HStack spacing={8}>
@@ -150,16 +209,64 @@ export function OverviewView() {
           {info ? (
             <VStack alignment="trailing" spacing={2}>
               <Text font={13} foregroundStyle="secondaryLabel">{`v${info.version}`}</Text>
-              <Text font={12} foregroundStyle="tertiaryLabel">{`Build ${info.build}`}</Text>
+              <Text font={UI.captionFont} foregroundStyle="tertiaryLabel">{`Build ${info.build}`}</Text>
             </VStack>
           ) : null}
         </HStack>
 
         {state.error ? (
           <Text font={13} foregroundStyle="systemRed">
-            {`连接错误：${state.error}（请到「设置」检查地址与 Key）`}
+            {connectErrorText(state.error)}
           </Text>
         ) : null}
+
+        {/* 出站快捷切换 */}
+        <PanelCard>
+          <HStack>
+            <Text font={UI.titleFont} fontWeight="semibold">出站模式</Text>
+            <Spacer />
+            {outboundError ? (
+              <Text font={UI.captionFont} foregroundStyle="systemRed">切换失败</Text>
+            ) : null}
+          </HStack>
+          {outbound === null ? (
+            <Text font={13} foregroundStyle="secondaryLabel">
+              {outboundError ? connectErrorText(outboundError, "加载失败") : "加载中…"}
+            </Text>
+          ) : (
+            <Picker pickerStyle="segmented" value={outbound} onChanged={changeOutbound}>
+              <Text tag="rule">规则</Text>
+              <Text tag="proxy">代理</Text>
+              <Text tag="direct">直连</Text>
+            </Picker>
+          )}
+        </PanelCard>
+
+        {/* 未处理事件条 */}
+        <HStack
+          spacing={10}
+          padding={UI.cardPadding}
+          frame={{ maxWidth: "infinity", alignment: "leading" }}
+          background={cardBackground()}
+          onTapGesture={() => openRequestsSegment("events")}
+        >
+          <Image
+            systemName={latestEvent ? "bell.fill" : "bell"}
+            foregroundStyle={latestEvent ? "systemOrange" : "secondaryLabel"}
+            font={16}
+          />
+          <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+            <Text font={UI.titleFont} fontWeight="semibold">
+              {events === null ? "事件" : events.length === 0 ? "暂无事件" : `${events.length} 条事件`}
+            </Text>
+            <Text font={UI.captionFont} foregroundStyle="secondaryLabel" lineLimit={2}>
+              {latestEvent
+                ? `${formatEventTime(latestEvent.date)} · ${latestEvent.content ?? latestEvent.identifier}`
+                : "点按查看事件中心"}
+            </Text>
+          </VStack>
+          <Image systemName="chevron.right" foregroundStyle="tertiaryLabel" font={12} />
+        </HStack>
 
         <VStack spacing={12}>
           <HStack spacing={12}>
@@ -214,23 +321,17 @@ export function OverviewView() {
               iconColor="systemTeal"
               title="DNS 缓存"
               value={dns !== null ? String(dns) : "—"}
-              subtitle="缓存条目"
+              subtitle={bans !== null ? `活动封禁 ${bans}` : "缓存条目"}
             />
           </HStack>
         </VStack>
 
         {/* 实时速率曲线（上传/下载） */}
-        <VStack
-          alignment="leading"
-          spacing={10}
-          padding={14}
-          frame={{ maxWidth: "infinity", alignment: "leading" }}
-          background={{ style: "rgba(128,128,128,0.14)", shape: { type: "rect", cornerRadius: 16, style: "continuous" } }}
-        >
+        <PanelCard>
           <HStack>
-            <Text font={15} fontWeight="semibold">实时速率</Text>
+            <Text font={UI.titleFont} fontWeight="semibold">实时速率</Text>
             <Spacer />
-            <Text font={12} foregroundStyle="secondaryLabel">KB/s · 1 秒采样 · 近 1 分钟</Text>
+            <Text font={UI.captionFont} foregroundStyle="secondaryLabel">KB/s · 1 秒采样 · 近 1 分钟</Text>
           </HStack>
           {state.traffic && speedMarks.length >= 4 ? (
             <Chart
@@ -248,20 +349,14 @@ export function OverviewView() {
           ) : (
             <Text font={13} foregroundStyle="secondaryLabel">采样中，稍后展示速率曲线…</Text>
           )}
-        </VStack>
+        </PanelCard>
 
         {/* 内存趋势图 */}
-        <VStack
-          alignment="leading"
-          spacing={10}
-          padding={14}
-          frame={{ maxWidth: "infinity", alignment: "leading" }}
-          background={{ style: "rgba(128,128,128,0.14)", shape: { type: "rect", cornerRadius: 16, style: "continuous" } }}
-        >
+        <PanelCard>
           <HStack>
-            <Text font={15} fontWeight="semibold">内存历史</Text>
+            <Text font={UI.titleFont} fontWeight="semibold">内存历史</Text>
             <Spacer />
-            <Text font={12} foregroundStyle="secondaryLabel">{`${state.history.length} 个采样点`}</Text>
+            <Text font={UI.captionFont} foregroundStyle="secondaryLabel">{`${state.history.length} 个采样点`}</Text>
           </HStack>
           {marks.length >= 2 ? (
             <Chart
@@ -273,34 +368,8 @@ export function OverviewView() {
           ) : (
             <Text font={13} foregroundStyle="secondaryLabel">采样中，稍后展示趋势…</Text>
           )}
-        </VStack>
-
-        {/* 引擎健康 */}
-        <VStack
-          alignment="leading"
-          spacing={10}
-          padding={14}
-          frame={{ maxWidth: "infinity", alignment: "leading" }}
-          background={{ style: "rgba(128,128,128,0.14)", shape: { type: "rect", cornerRadius: 16, style: "continuous" } }}
-        >
-          <Text font={15} fontWeight="semibold">引擎健康</Text>
-          <HStack spacing={0}>
-            <HealthItem label="DNS 缓存" value={dns !== null ? String(dns) : "—"} />
-            <HealthItem label="活动请求" value={active !== null ? String(active) : "—"} />
-            <HealthItem label="活动封禁" value={bans !== null ? String(bans) : "—"} />
-            <HealthItem label="采样点" value={String(state.history.length)} />
-          </HStack>
-        </VStack>
+        </PanelCard>
       </VStack>
     </ScrollView>
-  )
-}
-
-function HealthItem({ label, value }: { label: string; value: string }) {
-  return (
-    <VStack spacing={4} frame={{ maxWidth: "infinity" }}>
-      <Text font={17} fontWeight="semibold">{value}</Text>
-      <Text font={12} foregroundStyle="secondaryLabel">{label}</Text>
-    </VStack>
   )
 }

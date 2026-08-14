@@ -1,4 +1,4 @@
-// 设置 Tab：连接、偏好、出站模式、功能开关、模块、危险操作
+// 设置 Tab：连接、面板、引擎、脚本、配置
 import {
   Button,
   List,
@@ -33,6 +33,7 @@ import {
   type FeatureKey,
 } from "../lib/surgeApi"
 import { HomeTitleWrapper } from "../components/HomeTitleWrapper"
+import { ChangelogView } from "../components/ReleaseNotesSheet"
 import { clearHistory, saveConfig, savePrefs, useStore } from "../lib/store"
 import { ScriptsView } from "./ScriptsView"
 
@@ -219,17 +220,18 @@ export function SettingsView() {
           <Text tag="https">https</Text>
           <Text tag="http">http</Text>
         </Picker>
-        <TextField title="主机" value={host} onChanged={setHost} prompt="127.0.0.1" />
-        <TextField title="端口" value={port} onChanged={setPort} prompt="6166" />
-        <SecureField title="API Key" value={key} onChanged={setKey} prompt="X-Key" />
+        <TextField label={<Text font={17}>主机</Text>} value={host} onChanged={setHost} prompt="127.0.0.1" />
+        <TextField label={<Text font={17}>端口</Text>} value={port} onChanged={setPort} prompt="6166" />
+        <SecureField label={<Text font={17}>API Key</Text>} value={key} onChanged={setKey} prompt="X-Key" />
         <Button title="保存并连接" systemImage="checkmark.circle" action={applyConnection} />
       </Section>
 
-      {/* 偏好 */}
+      {/* 面板 */}
       <Section
-        header={<Text>偏好</Text>}
+        header={<Text>面板</Text>}
         footer={<Text font={13}>刷新间隔用于内存趋势与引擎指标。实时速率图固定 1 秒采样（/v1/traffic），与 Surge Web Dashboard 一致。</Text>}
       >
+        <NavigationLink title="更新说明" destination={<ChangelogView />} />
         <Toggle
           title="自动刷新"
           value={state.prefs.autoRefresh}
@@ -256,12 +258,12 @@ export function SettingsView() {
         <Button title="清空采样历史" role="destructive" systemImage="trash" action={() => setConfirm("clearHistory")} />
       </Section>
 
-      {/* 出站模式 */}
-      <Section header={<Text>出站模式</Text>}>
+      {/* 引擎：出站、功能开关、模块、日志 */}
+      <Section header={<Text>引擎</Text>} footer={engineError ? <Text font={13} foregroundStyle="systemRed">{engineError}</Text> : undefined}>
         {outbound === null ? (
-          <Text foregroundStyle="secondaryLabel">{engineError ? "不可用" : "加载中…"}</Text>
+          <Text foregroundStyle="secondaryLabel">{engineError ? "出站模式不可用" : "加载出站模式…"}</Text>
         ) : (
-          <Picker title="模式" pickerStyle="segmented" value={outbound} onChanged={changeOutbound}>
+          <Picker title="出站模式" pickerStyle="segmented" value={outbound} onChanged={changeOutbound}>
             <Text tag="rule">规则</Text>
             <Text tag="proxy">代理</Text>
             <Text tag="direct">直连</Text>
@@ -274,10 +276,6 @@ export function SettingsView() {
             ))}
           </Picker>
         ) : null}
-      </Section>
-
-      {/* 日志级别 */}
-      <Section header={<Text>日志</Text>}>
         <Picker title="日志级别" value={logLevel} onChanged={changeLogLevel}>
           <Text tag="verbose">verbose（最详细）</Text>
           <Text tag="info">info</Text>
@@ -285,28 +283,15 @@ export function SettingsView() {
           <Text tag="warning">warning</Text>
           <Text tag="error">error（最少）</Text>
         </Picker>
-      </Section>
-
-      {/* 脚本 */}
-      <Section header={<Text>脚本</Text>}>
-        <NavigationLink title="脚本管理" destination={<ScriptsView />} />
-      </Section>
-
-      {/* 功能开关 */}
-      <Section header={<Text>功能开关</Text>}>
         {features === null ? (
-          <Text foregroundStyle="secondaryLabel">{engineError ? "不可用" : "加载中…"}</Text>
+          <Text foregroundStyle="secondaryLabel">{engineError ? "功能开关不可用" : "加载功能开关…"}</Text>
         ) : (
           (Object.keys(FEATURE_LABELS) as FeatureKey[]).map((k) => (
             <Toggle key={k} title={FEATURE_LABELS[k]} value={features[k]} onChanged={(v: boolean) => toggleFeature(k, v)} />
           ))
         )}
-      </Section>
-
-      {/* 模块 */}
-      <Section header={<Text>模块</Text>}>
         {modules === null ? (
-          <Text foregroundStyle="secondaryLabel">{engineError ? "不可用" : "加载中…"}</Text>
+          <Text foregroundStyle="secondaryLabel">{engineError ? "模块不可用" : "加载模块…"}</Text>
         ) : modules.available.length === 0 ? (
           <Text foregroundStyle="secondaryLabel">无可用模块</Text>
         ) : (
@@ -321,8 +306,13 @@ export function SettingsView() {
         )}
       </Section>
 
-      {/* 危险区 */}
-      <Section header={<Text>引擎</Text>} footer={actionMsg ? <Text font={13}>{actionMsg}</Text> : undefined}>
+      {/* 脚本 */}
+      <Section header={<Text>脚本</Text>}>
+        <NavigationLink title="脚本管理" destination={<ScriptsView />} />
+      </Section>
+
+      {/* 配置 */}
+      <Section header={<Text>配置</Text>} footer={actionMsg ? <Text font={13}>{actionMsg}</Text> : undefined}>
         <NavigationLink title="查看当前配置" destination={<ProfileView />} />
         <Button title="重新加载配置" systemImage="arrow.triangle.2.circlepath" action={() => setConfirm("reload")} />
         <Button title="停止引擎" role="destructive" systemImage="stop.circle" action={() => setConfirm("stop")} />

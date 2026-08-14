@@ -3,6 +3,7 @@ import {
   HStack,
   List,
   Picker,
+  Script,
   Section,
   Spacer,
   Text,
@@ -14,6 +15,7 @@ import {
 } from "scripting"
 import { getRules } from "../lib/surgeApi"
 import { useStore } from "../lib/store"
+import { connectErrorText } from "../lib/ui"
 
 type ParsedRule = {
   raw: string
@@ -63,13 +65,19 @@ export function RulesView() {
   const [typeFilter, setTypeFilter] = useState("__all__")
   const [policyFilter, setPolicyFilter] = useState("__all__")
 
+  async function load() {
+    try {
+      const r = await getRules(state.config)
+      setRules(r.rules.map(parseRule))
+      setPolicies(r["available-policies"] ?? [])
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
   useEffect(() => {
-    getRules(state.config)
-      .then((r) => {
-        setRules(r.rules.map(parseRule))
-        setPolicies(r["available-policies"] ?? [])
-      })
-      .catch((e) => setError(String(e)))
+    load()
   }, [state.config])
 
   const types = rules ? [...new Set(rules.map((r) => r.type))].sort() : []
@@ -89,10 +97,13 @@ export function RulesView() {
   })
 
   return (
-    <List navigationTitle="规则">
+    <List
+      navigationTitle={Script.env === "home_screen" ? undefined : "规则"}
+      refreshable={load}
+    >
       {error ? (
         <Section>
-          <Text foregroundStyle="systemRed">{error}</Text>
+          <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
         </Section>
       ) : null}
 

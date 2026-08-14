@@ -2,7 +2,7 @@
   "intentInputTypes" : [
 
   ],
-  "version" : "1.2.1",
+  "version" : "1.3.0",
   "iconImage" : "",
   "icon" : "gauge.with.needle.fill",
   "author" : {
@@ -21,9 +21,9 @@
   },
   "color" : "rgba(28, 140, 255, 1)",
   "localizedDescriptions" : {
-    "zh" : "Surge 监控面板：内存趋势、实时网速、策略组管理、流量排行与请求诊断（基于 Surge HTTP API）。"
+    "zh" : "Surge 监控面板：运行态仪表、策略组、流量排行、请求工作台与引擎设置（基于 Surge HTTP API）。"
   },
   "name" : "Surge Panel",
   "runInApp" : false,
-  "description" : "Surge monitoring panel: memory trend, realtime speed, policy groups, traffic ranking and request diagnostics via Surge HTTP API."
+  "description" : "Surge monitoring panel: overview, policy groups, traffic ranking, requests workspace and engine settings via Surge HTTP API."
 }
