@@ -345,19 +345,35 @@ export function analyzeMemoryTrend(history: HistoryPoint[]): {
   level: "ok" | "warning" | "insufficient"
   message: string
   peakMB: number
+  minMB: number
+  currentMB: number
   slopeMBPerMin: number
+  windowMin: number
+  samples: number
 } {
+  const empty = {
+    peakMB: 0,
+    minMB: 0,
+    currentMB: 0,
+    slopeMBPerMin: 0,
+    windowMin: 0,
+    samples: 0,
+  }
   const pts = history.filter((p) => p.mem > 0)
   if (pts.length < 12) {
     return {
       level: "insufficient",
       message: "采样数据不足，持续运行约 1 分钟后再查看趋势判断。",
-      peakMB: 0,
-      slopeMBPerMin: 0,
+      ...empty,
+      samples: pts.length,
+      currentMB: pts.length ? pts[pts.length - 1].mem / (1024 * 1024) : 0,
     }
   }
   const windowPts = pts.slice(-Math.min(pts.length, 120))
-  const peakMB = Math.max(...windowPts.map((p) => p.mem)) / (1024 * 1024)
+  const mems = windowPts.map((p) => p.mem)
+  const peakMB = Math.max(...mems) / (1024 * 1024)
+  const minMB = Math.min(...mems) / (1024 * 1024)
+  const currentMB = mems[mems.length - 1] / (1024 * 1024)
   const first = windowPts[0]
   const last = windowPts[windowPts.length - 1]
   const dtMin = (last.t - first.t) / 60000
@@ -370,19 +386,25 @@ export function analyzeMemoryTrend(history: HistoryPoint[]): {
     if (tail[i].mem >= tail[i - 1].mem) rising++
   }
   const risingRatio = tail.length > 1 ? rising / (tail.length - 1) : 0
+  const stats = {
+    peakMB,
+    minMB,
+    currentMB,
+    slopeMBPerMin,
+    windowMin: dtMin,
+    samples: windowPts.length,
+  }
 
   if (slopeMBPerMin > 3 && risingRatio > 0.85) {
     return {
       level: "warning",
-      message: `内存持续上涨且不回落（约 +${slopeMBPerMin.toFixed(1)} MB/分钟），可能存在内存异常。建议尝试重新加载配置或重启 Surge 引擎，并检查事件中心是否有脚本报错。`,
-      peakMB,
-      slopeMBPerMin,
+      message: `近 ${Math.round(dtMin)} 分钟内存持续上涨且不回落（约 +${slopeMBPerMin.toFixed(1)} MB/分钟），可能存在泄漏。可尝试重新加载配置，或到「请求 → 事件」查看脚本报错。`,
+      ...stats,
     }
   }
   return {
     level: "ok",
     message: `近 ${Math.round(dtMin)} 分钟内存变化平缓（${slopeMBPerMin >= 0 ? "+" : ""}${slopeMBPerMin.toFixed(1)} MB/分钟），波动属正常范围。`,
-    peakMB,
-    slopeMBPerMin,
+    ...stats,
   }
 }

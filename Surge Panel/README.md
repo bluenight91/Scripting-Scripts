@@ -5,7 +5,7 @@
 ## 功能
 
 - **总览**：运行态仪表（内存 / 时长 / 实时上下行 / 活动连接 / DNS 缓存），底部事件摘要条（点按进入请求 Tab 事件分段），近 1 分钟实时速率双折线图（1 秒采样，数据来自 `/v1/traffic`，对齐 [yasd](https://github.com/geekdada/yasd)），内存历史面积图
-- **策略**：策略组搜索与下拉刷新；点按切换节点；全节点延迟显示（基于 Surge 基准测试缓存 `/v1/policies/benchmark_results`，覆盖内嵌/链式节点）；自动组（url-test 等）支持组测速与「最优」当选标记
+- **策略**：按 Surge 配置中的策略组顺序排列；组名搜索与下拉刷新；点按切换节点；全节点延迟显示（基于 Surge 基准测试缓存 `/v1/policies/benchmark_results`，覆盖内嵌/链式节点）；自动组（url-test 等）支持组测速与「最优」当选标记
 - **流量**：实时合计、网卡 interface 实时速度、活动 connector、节点累计排行（均来自 `/v1/traffic`）
 - **请求**：顶部分段工作台（活动 | 最近 | 事件 | DNS | 规则）。活动连接可终止；最近请求含规则命中/耗时分解；DNS 缓存详情与延迟测试；规则浏览器（搜索/筛选）
 - **设置**：连接（API）→ 面板（自动刷新/历史）→ 引擎（出站、MitM/捕获/重写/脚本开关、模块、日志）→ 脚本 → 配置（当前配置 / 重载 / 停引擎）
@@ -26,7 +26,7 @@
 
 - 数据层：`lib/surgeApi.ts` 封装全部 Surge HTTP 端点；`lib/store.ts` 订阅式全局 store。实时速率独立 1Hz 轮询 `/v1/traffic`（内存中保留 60 点）；内存/引擎指标按设置间隔拉取 Prometheus，历史存 Storage
 - 图表：SwiftUI Charts；折线用 `interpolationMethod: "monotone"` 避免 Catmull-Rom 过冲到负值；Y 轴 `chartYScale` 从 0 起；多序列用单 `LineChart` + `foregroundStyleBy`
-- 首页适配：`home_screen_default_ui.tsx` 入口，首页模式用顶部分段选择器替代原生 TabView；全屏底栏已标明当前 Tab，内容区不再重复 28pt 页名
+- 首页适配：`home_screen_default_ui.tsx` 入口，首页模式用顶部分段选择器 + 左右滑动翻页（隐藏底栏，避免与 Scripting 底栏重叠）；全屏底栏已标明当前 Tab，内容区不再重复页名
 - 不做：Mac 设备管理、配置切换、系统代理；MITM CA / `/v1/environment`
 
 ## License

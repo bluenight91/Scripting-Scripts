@@ -25,20 +25,6 @@ import { SettingsView } from "./views/SettingsView"
 
 const TAB_TITLES = ["总览", "策略", "流量", "请求", "设置"]
 
-function TabContent({ index }: { index: number }) {
-  return index === 0 ? (
-    <OverviewView />
-  ) : index === 1 ? (
-    <PoliciesView />
-  ) : index === 2 ? (
-    <TrafficView />
-  ) : index === 3 ? (
-    <NetworkView />
-  ) : (
-    <SettingsView />
-  )
-}
-
 export function SurgePanelApp() {
   const dismiss = Navigation.useDismiss()
   const selection = useObservable<number>(0)
@@ -57,7 +43,7 @@ export function SurgePanelApp() {
 
   useEffect(() => registerTabJump((i) => selection.setValue(i)), [])
 
-  // ---------- 首页 Tab：顶部分段选择器 ----------
+  // ---------- 首页 Tab：顶部分段器 + 左右滑动翻页（隐藏底栏，避免与 Scripting 底栏叠两层） ----------
   if (isHome) {
     const current = selection.value
     return (
@@ -78,7 +64,28 @@ export function SurgePanelApp() {
               <Text key={t} tag={String(i)}>{t}</Text>
             ))}
           </Picker>
-          <TabContent index={current} />
+          <TabView
+            selection={selection}
+            tabViewStyle="page"
+            tabBarVisibility="hidden"
+            frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+          >
+            <Tab title="总览" value={0}>
+              <OverviewView />
+            </Tab>
+            <Tab title="策略" value={1}>
+              <PoliciesView />
+            </Tab>
+            <Tab title="流量" value={2}>
+              <TrafficView />
+            </Tab>
+            <Tab title="请求" value={3}>
+              <NetworkView />
+            </Tab>
+            <Tab title="设置" value={4}>
+              <SettingsView />
+            </Tab>
+          </TabView>
         </VStack>
       </NavigationStack>
     )

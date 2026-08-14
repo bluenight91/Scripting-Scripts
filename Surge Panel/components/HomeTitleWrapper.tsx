@@ -1,24 +1,9 @@
-// 首页模式页内标题：分段选择器已标明当前 Tab，用较小标题避免与底栏/分段器抢层级
-import { Script, Text, VStack } from "scripting"
-
+// 首页模式不再重复页内大标题：顶部分段器已标明当前 Tab
 export function HomeTitleWrapper({
-  title,
   children,
 }: {
-  title: string
+  title?: string
   children: any
 }) {
-  if (Script.env !== "home_screen") return children
-  return (
-    <VStack
-      alignment="leading"
-      spacing={0}
-      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-    >
-      <Text font={22} fontWeight="bold" padding={{ leading: 20, trailing: 20, top: 4, bottom: 10 }}>
-        {title}
-      </Text>
-      {children}
-    </VStack>
-  )
+  return children
 }
