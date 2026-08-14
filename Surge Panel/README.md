@@ -20,7 +20,7 @@
 ## 技术要点
 
 - 数据层：`lib/surgeApi.ts` 封装全部 Surge HTTP 端点；`lib/store.ts` 订阅式全局 store。实时速率独立 1Hz 轮询 `/v1/traffic`（内存中保留 60 点）；内存/引擎指标按设置间隔拉取 Prometheus，历史存 Storage
-- 图表：SwiftUI Charts 封装，多序列用单 `LineChart` + `foregroundStyleBy`
+- 图表：SwiftUI Charts；折线用 `interpolationMethod: "monotone"` 避免 Catmull-Rom 过冲到负值；Y 轴 `chartYScale` 从 0 起；多序列用单 `LineChart` + `foregroundStyleBy`
 - 首页适配：`home_screen_default_ui.tsx` 入口，首页模式用顶部分段选择器替代原生 TabView
 
 ## License
