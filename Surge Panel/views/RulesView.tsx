@@ -16,6 +16,7 @@ import {
 import { getRules } from "../lib/surgeApi"
 import { useStore } from "../lib/store"
 import { connectErrorText } from "../lib/ui"
+import { RequestsSegmentBar } from "../components/RequestsSegmentBar"
 
 type ParsedRule = {
   raw: string
@@ -99,8 +100,12 @@ export function RulesView() {
   return (
     <List
       navigationTitle={Script.env === "home_screen" ? undefined : "规则"}
-      refreshable={load}
+      refreshable={async () => { await load() }}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
     >
+      <Section>
+        <RequestsSegmentBar />
+      </Section>
       {error ? (
         <Section>
           <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>

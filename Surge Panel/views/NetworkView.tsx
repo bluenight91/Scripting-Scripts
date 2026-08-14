@@ -5,7 +5,6 @@ import {
   Image,
   List,
   NavigationLink,
-  Picker,
   Script,
   Section,
   Spacer,
@@ -27,23 +26,12 @@ import {
   type SurgeEvent,
   type SurgeRequest,
 } from "../lib/surgeApi"
-import { formatBytes, formatEventTime, formatSpeed } from "../lib/metrics"
-import {
-  setRequestsSegment,
-  useStore,
-  type RequestsSegment,
-} from "../lib/store"
+import { formatBytes, formatEventTime, formatRequestClock, formatRequestDateTime, formatSpeed, surgeTimestampToMs } from "../lib/metrics"
+import { useStore } from "../lib/store"
 import { HomeTitleWrapper } from "../components/HomeTitleWrapper"
+import { RequestsSegmentBar } from "../components/RequestsSegmentBar"
 import { connectErrorText } from "../lib/ui"
 import { RulesView } from "./RulesView"
-
-const SEGMENTS: { id: RequestsSegment; title: string }[] = [
-  { id: "active", title: "活动" },
-  { id: "recent", title: "最近" },
-  { id: "events", title: "事件" },
-  { id: "dns", title: "DNS" },
-  { id: "rules", title: "规则" },
-]
 
 export function NetworkView() {
   const state = useStore()
@@ -51,30 +39,17 @@ export function NetworkView() {
 
   return (
     <HomeTitleWrapper title="请求">
-      <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-        <Picker
-          label={<Text>请求分段</Text>}
-          pickerStyle="segmented"
-          value={segment}
-          onChanged={(v: string) => setRequestsSegment(v as RequestsSegment)}
-          padding={{ horizontal: 16, top: 8, bottom: 8 }}
-        >
-          {SEGMENTS.map((s) => (
-            <Text key={s.id} tag={s.id}>{s.title}</Text>
-          ))}
-        </Picker>
-        {segment === "active" ? (
-          <ActiveConnectionsView />
-        ) : segment === "recent" ? (
-          <RecentRequestsView />
-        ) : segment === "events" ? (
-          <EventsView />
-        ) : segment === "dns" ? (
-          <DnsView />
-        ) : (
-          <RulesView />
-        )}
-      </VStack>
+      {segment === "active" ? (
+        <ActiveConnectionsView />
+      ) : segment === "recent" ? (
+        <RecentRequestsView />
+      ) : segment === "events" ? (
+        <EventsView />
+      ) : segment === "dns" ? (
+        <DnsView />
+      ) : (
+        <RulesView />
+      )}
     </HomeTitleWrapper>
   )
 }
@@ -107,11 +82,12 @@ function ActiveConnectionsView() {
   return (
     <List
       navigationTitle={listTitle("活动连接")}
-      refreshable={load}
-      toolbar={{
-        topBarTrailing: <Button title="刷新" systemImage="arrow.clockwise" action={load} />,
-      }}
+      refreshable={async () => { await load() }}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
     >
+      <Section>
+        <RequestsSegmentBar />
+      </Section>
       {error ? (
         <Section>
           <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
@@ -162,11 +138,12 @@ function RecentRequestsView() {
   return (
     <List
       navigationTitle={listTitle("最近请求")}
-      refreshable={load}
-      toolbar={{
-        topBarTrailing: <Button title="刷新" systemImage="arrow.clockwise" action={load} />,
-      }}
+      refreshable={async () => { await load() }}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
     >
+      <Section>
+        <RequestsSegmentBar />
+      </Section>
       {error ? (
         <Section>
           <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
@@ -196,6 +173,7 @@ function RecentRequestsView() {
 // ---------- 请求行 / 详情 ----------
 
 function RequestRow({ r, active }: { r: SurgeRequest; active?: boolean }) {
+  const clock = formatRequestClock(active ? r.startDate : (r.completedDate ?? r.startDate))
   return (
     <VStack alignment="leading" spacing={4}>
       <HStack spacing={6}>
@@ -204,9 +182,12 @@ function RequestRow({ r, active }: { r: SurgeRequest; active?: boolean }) {
         ) : r.rejected ? (
           <Image systemName="hand.raised.fill" foregroundStyle="systemOrange" font={12} />
         ) : null}
-        <Text font={16} lineLimit={1} minScaleFactor={0.6}>
+        <Text font={16} lineLimit={1} minScaleFactor={0.6} frame={{ maxWidth: "infinity", alignment: "leading" }}>
           {r.remoteHost ?? r.URL}
         </Text>
+        {clock ? (
+          <Text font={12} foregroundStyle="tertiaryLabel">{clock}</Text>
+        ) : null}
       </HStack>
       <HStack spacing={8}>
         <Text font={13} foregroundStyle="secondaryLabel" lineLimit={1}>
@@ -229,13 +210,6 @@ function RequestRow({ r, active }: { r: SurgeRequest; active?: boolean }) {
       ) : null}
     </VStack>
   )
-}
-
-function fmtDateTime(ms?: number): string {
-  if (!ms) return "—"
-  const d = new Date(ms)
-  const p = (n: number) => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
 function InfoRow({ label, value, selectable }: { label: string; value?: string | null; selectable?: boolean }) {
@@ -300,8 +274,8 @@ function RequestDetailView({
         <InfoRow label="远端" value={r.remoteAddress ? `${r.remoteAddress}${r.remoteHost && r.remoteHost !== r.remoteAddress ? `（${r.remoteHost}）` : ""}` : r.remoteHost} />
         <InfoRow label="本机" value={r.localAddress} />
         <InfoRow label="接口" value={r.interface} />
-        <InfoRow label="开始时间" value={fmtDateTime(r.startDate)} />
-        {r.completedDate ? <InfoRow label="完成时间" value={fmtDateTime(r.completedDate)} /> : null}
+        <InfoRow label="开始时间" value={formatRequestDateTime(r.startDate)} />
+        {r.completedDate ? <InfoRow label="完成时间" value={formatRequestDateTime(r.completedDate)} /> : null}
       </Section>
 
       {/* 流量 */}
@@ -376,11 +350,12 @@ function EventsView() {
   return (
     <List
       navigationTitle={listTitle("事件中心")}
-      refreshable={load}
-      toolbar={{
-        topBarTrailing: <Button title="刷新" systemImage="arrow.clockwise" action={load} />,
-      }}
+      refreshable={async () => { await load() }}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
     >
+      <Section>
+        <RequestsSegmentBar />
+      </Section>
       {error ? (
         <Section>
           <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
@@ -467,7 +442,8 @@ function DnsView() {
   return (
     <List
       navigationTitle={listTitle("DNS 缓存")}
-      refreshable={load}
+      refreshable={async () => { await load() }}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       confirmationDialog={{
         isPresented: showFlush,
         onChanged: setShowFlush,
@@ -475,6 +451,9 @@ function DnsView() {
         actions: <Button title="清除" role="destructive" action={doFlush} />,
       }}
     >
+      <Section>
+        <RequestsSegmentBar />
+      </Section>
       <Section
         header={<Text>DNS 延迟测试</Text>}
         footer={testResult ? <Text font={12}>{testResult}</Text> : undefined}
@@ -526,9 +505,8 @@ function DnsView() {
 function DnsDetailView({ e }: { e: DnsEntry }) {
   const expireText = (() => {
     if (!e.expiresTime) return null
-    const ms = e.expiresTime * 1000
-    const remainMin = Math.max(0, Math.round((ms - Date.now()) / 60000))
-    return fmtDateTime(ms) + `（剩余约 ${remainMin} 分钟）`
+    const remainMin = Math.max(0, Math.round((surgeTimestampToMs(e.expiresTime) - Date.now()) / 60000))
+    return formatRequestDateTime(e.expiresTime) + `（剩余约 ${remainMin} 分钟）`
   })()
 
   return (

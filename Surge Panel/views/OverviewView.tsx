@@ -7,7 +7,6 @@ import {
   HStack,
   Image,
   LineChart,
-  Picker,
   Script,
   ScrollView,
   Spacer,
@@ -18,13 +17,8 @@ import {
 } from "scripting"
 import { PanelCard } from "../components/PanelCard"
 import { StatCard } from "../components/StatCard"
-import { openRequestsSegment, useStore, type HistoryPoint } from "../lib/store"
-import {
-  getEvents,
-  getOutboundMode,
-  setOutboundMode,
-  type SurgeEvent,
-} from "../lib/surgeApi"
+import { openRequestsSegment, refreshNow, useStore, type HistoryPoint } from "../lib/store"
+import { getEvents, type SurgeEvent } from "../lib/surgeApi"
 import {
   buildInfo,
   formatBytesParts,
@@ -67,8 +61,6 @@ const LINE_STYLE = { lineWidth: 2.5, lineCap: "round" as const, lineJoin: "round
 export function OverviewView() {
   const state = useStore()
   const [showDiag, setShowDiag] = useState(false)
-  const [outbound, setOutbound] = useState<string | null>(null)
-  const [outboundError, setOutboundError] = useState<string | null>(null)
   const [events, setEvents] = useState<SurgeEvent[] | null>(null)
 
   const mem = state.samples ? gaugeValue(state.samples, "surge_memory_bytes") : null
@@ -88,24 +80,6 @@ export function OverviewView() {
 
   useEffect(() => {
     let cancelled = false
-    getOutboundMode(state.config)
-      .then((r) => {
-        if (cancelled) return
-        setOutbound(r.mode)
-        setOutboundError(null)
-      })
-      .catch((e) => {
-        if (cancelled) return
-        setOutbound(null)
-        setOutboundError(String(e))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [state.config])
-
-  useEffect(() => {
-    let cancelled = false
     getEvents(state.config)
       .then((r) => {
         if (!cancelled) setEvents(r.events.slice().reverse())
@@ -118,16 +92,13 @@ export function OverviewView() {
     }
   }, [state.config, state.samples])
 
-  async function changeOutbound(mode: string) {
-    const prev = outbound
-    setOutbound(mode)
-    try {
-      await setOutboundMode(state.config, mode)
-      setOutboundError(null)
-    } catch (e) {
-      setOutbound(prev)
-      setOutboundError(String(e))
-    }
+  async function reload() {
+    await Promise.all([
+      refreshNow().catch(() => {}),
+      getEvents(state.config)
+        .then((r) => setEvents(r.events.slice().reverse()))
+        .catch(() => setEvents(null)),
+    ])
   }
 
   const chartPts = downsample(state.history, 60)
@@ -172,6 +143,7 @@ export function OverviewView() {
   return (
     <ScrollView
       axes="vertical"
+      refreshable={reload}
       sheet={{
         isPresented: showDiag,
         onChanged: setShowDiag,
@@ -219,54 +191,6 @@ export function OverviewView() {
             {connectErrorText(state.error)}
           </Text>
         ) : null}
-
-        {/* 出站快捷切换 */}
-        <PanelCard>
-          <HStack>
-            <Text font={UI.titleFont} fontWeight="semibold">出站模式</Text>
-            <Spacer />
-            {outboundError ? (
-              <Text font={UI.captionFont} foregroundStyle="systemRed">切换失败</Text>
-            ) : null}
-          </HStack>
-          {outbound === null ? (
-            <Text font={13} foregroundStyle="secondaryLabel">
-              {outboundError ? connectErrorText(outboundError, "加载失败") : "加载中…"}
-            </Text>
-          ) : (
-            <Picker pickerStyle="segmented" value={outbound} onChanged={changeOutbound}>
-              <Text tag="rule">规则</Text>
-              <Text tag="proxy">代理</Text>
-              <Text tag="direct">直连</Text>
-            </Picker>
-          )}
-        </PanelCard>
-
-        {/* 未处理事件条 */}
-        <HStack
-          spacing={10}
-          padding={UI.cardPadding}
-          frame={{ maxWidth: "infinity", alignment: "leading" }}
-          background={cardBackground()}
-          onTapGesture={() => openRequestsSegment("events")}
-        >
-          <Image
-            systemName={latestEvent ? "bell.fill" : "bell"}
-            foregroundStyle={latestEvent ? "systemOrange" : "secondaryLabel"}
-            font={16}
-          />
-          <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-            <Text font={UI.titleFont} fontWeight="semibold">
-              {events === null ? "事件" : events.length === 0 ? "暂无事件" : `${events.length} 条事件`}
-            </Text>
-            <Text font={UI.captionFont} foregroundStyle="secondaryLabel" lineLimit={2}>
-              {latestEvent
-                ? `${formatEventTime(latestEvent.date)} · ${latestEvent.content ?? latestEvent.identifier}`
-                : "点按查看事件中心"}
-            </Text>
-          </VStack>
-          <Image systemName="chevron.right" foregroundStyle="tertiaryLabel" font={12} />
-        </HStack>
 
         <VStack spacing={12}>
           <HStack spacing={12}>
@@ -369,6 +293,32 @@ export function OverviewView() {
             <Text font={13} foregroundStyle="secondaryLabel">采样中，稍后展示趋势…</Text>
           )}
         </PanelCard>
+
+        {/* 事件摘要：放底部，点按进入请求 Tab 事件分段 */}
+        <HStack
+          spacing={10}
+          padding={UI.cardPadding}
+          frame={{ maxWidth: "infinity", alignment: "leading" }}
+          background={cardBackground()}
+          onTapGesture={() => openRequestsSegment("events")}
+        >
+          <Image
+            systemName={latestEvent ? "bell.fill" : "bell"}
+            foregroundStyle={latestEvent ? "systemOrange" : "secondaryLabel"}
+            font={16}
+          />
+          <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+            <Text font={UI.titleFont} fontWeight="semibold">
+              {events === null ? "事件" : events.length === 0 ? "暂无事件" : `${events.length} 条事件`}
+            </Text>
+            <Text font={UI.captionFont} foregroundStyle="secondaryLabel" lineLimit={2}>
+              {latestEvent
+                ? `${formatEventTime(latestEvent.date)} · ${latestEvent.content ?? latestEvent.identifier}`
+                : "点按查看事件中心"}
+            </Text>
+          </VStack>
+          <Image systemName="chevron.right" foregroundStyle="tertiaryLabel" font={12} />
+        </HStack>
       </VStack>
     </ScrollView>
   )
