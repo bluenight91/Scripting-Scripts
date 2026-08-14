@@ -271,6 +271,55 @@ export const setLogLevel = (c: SurgeConfig, level: string) =>
 export const getCurrentProfile = (c: SurgeConfig) =>
   get<{ profile?: string } | string>(c, "/v1/profiles/current?sensitive=0")
 
+export type ProfileLine =
+  | { kind: "kv"; key: string; value: string }
+  | { kind: "text"; text: string }
+
+export type ProfileSection = {
+  name: string
+  lines: ProfileLine[]
+}
+
+/** 把 Surge 配置按 [Section] 切开，便于列表展示 */
+export function parseProfileSections(profile: string): ProfileSection[] {
+  const sections: ProfileSection[] = []
+  let current: ProfileSection = { name: "", lines: [] }
+
+  const pushCurrent = () => {
+    if (current.name !== "" || current.lines.length > 0) sections.push(current)
+  }
+
+  for (const raw of profile.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line) continue
+    if (/^\[.+\]$/.test(line)) {
+      pushCurrent()
+      current = { name: line.slice(1, -1).trim(), lines: [] }
+      continue
+    }
+    const eq = line.indexOf("=")
+    if (eq > 0 && !line.startsWith("#") && !line.startsWith(";") && !line.startsWith("//")) {
+      current.lines.push({
+        kind: "kv",
+        key: line.slice(0, eq).trim(),
+        value: line.slice(eq + 1).trim(),
+      })
+      continue
+    }
+    current.lines.push({ kind: "text", text: line })
+  }
+  pushCurrent()
+  return sections
+}
+
+/** 逗号分隔的长值拆成多行，避免挤成一块 */
+export function formatProfileValue(value: string): string {
+  if (!value.includes(",")) return value
+  const parts = value.split(",").map((s) => s.trim()).filter((s) => s.length > 0)
+  if (parts.length < 3 && value.length < 60) return value
+  return parts.join(",\n")
+}
+
 /** 从配置文本解析 [Proxy Group] 出现顺序，对齐 Surge App 列表 */
 export function parseProxyGroupOrder(profile: string): string[] {
   const names: string[] = []

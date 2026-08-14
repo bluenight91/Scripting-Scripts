@@ -6,7 +6,6 @@ import {
   NavigationLink,
   Picker,
   Script,
-  ScrollView,
   Section,
   SecureField,
   Text,
@@ -17,12 +16,14 @@ import {
   VStack,
 } from "scripting"
 import {
+  formatProfileValue,
   getCurrentProfile,
   getFeature,
   getModules,
   getOutboundGlobal,
   getOutboundMode,
   getRules,
+  parseProfileSections,
   reloadProfile,
   setFeature,
   setLogLevel as setSurgeLogLevel,
@@ -331,6 +332,10 @@ export function SettingsView() {
 
 // ---------- 查看当前配置 ----------
 
+function isCommentLine(text: string): boolean {
+  return text.startsWith("#") || text.startsWith(";") || text.startsWith("//")
+}
+
 function ProfileView() {
   const state = useStore()
   const [profile, setProfile] = useState<string | null>(null)
@@ -342,17 +347,60 @@ function ProfileView() {
       .catch((e) => setError(String(e)))
   }, [state.config])
 
+  const sections = profile ? parseProfileSections(profile) : []
+
   return (
-    <ScrollView axes="vertical" navigationTitle="当前配置">
-      <VStack alignment="leading" padding={14}>
-        {error ? (
+    <List
+      navigationTitle="当前配置"
+      tabBarVisibility="visible"
+    >
+      {error ? (
+        <Section>
           <Text foregroundStyle="systemRed">{error}</Text>
-        ) : profile === null ? (
+        </Section>
+      ) : profile === null ? (
+        <Section>
           <Text foregroundStyle="secondaryLabel">加载中…</Text>
-        ) : (
-          <Text font={12} monospaced>{profile}</Text>
-        )}
-      </VStack>
-    </ScrollView>
+        </Section>
+      ) : sections.length === 0 ? (
+        <Section>
+          <Text foregroundStyle="secondaryLabel">配置为空</Text>
+        </Section>
+      ) : (
+        sections.map((sec, si) => (
+          <Section
+            key={`${sec.name}-${si}`}
+            header={sec.name ? <Text>{sec.name}</Text> : undefined}
+          >
+            {sec.lines.map((line, li) =>
+              line.kind === "kv" ? (
+                <VStack key={li} alignment="leading" spacing={4} padding={{ vertical: 4 }}>
+                  <Text font={13} fontWeight="medium" foregroundStyle="secondaryLabel">
+                    {line.key}
+                  </Text>
+                  <Text
+                    font={15}
+                    multilineTextAlignment="leading"
+                    frame={{ maxWidth: "infinity", alignment: "leading" }}
+                  >
+                    {formatProfileValue(line.value)}
+                  </Text>
+                </VStack>
+              ) : (
+                <Text
+                  key={li}
+                  font={14}
+                  foregroundStyle={isCommentLine(line.text) ? "secondaryLabel" : "label"}
+                  multilineTextAlignment="leading"
+                  frame={{ maxWidth: "infinity", alignment: "leading" }}
+                >
+                  {line.text}
+                </Text>
+              )
+            )}
+          </Section>
+        ))
+      )}
+    </List>
   )
 }

@@ -43,14 +43,15 @@ export function SurgePanelApp() {
 
   useEffect(() => registerTabJump((i) => selection.setValue(i)), [])
 
-  // ---------- 首页 Tab：顶部分段器 + 左右滑动翻页（隐藏底栏，避免与 Scripting 底栏叠两层） ----------
+  // ---------- 首页 Tab：顶部分段器 + 左右滑动翻页；显式保留 Scripting 底栏 ----------
   if (isHome) {
     const current = selection.value
     return (
-      <NavigationStack>
+      <NavigationStack tabBarVisibility="visible">
         <VStack
           spacing={0}
           frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+          tabBarVisibility="visible"
           sheet={releaseNotes}
         >
           <Picker
@@ -67,7 +68,7 @@ export function SurgePanelApp() {
           <TabView
             selection={selection}
             tabViewStyle="page"
-            tabBarVisibility="hidden"
+            tabBarVisibility="visible"
             frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
           >
             <Tab title="总览" value={0}>
