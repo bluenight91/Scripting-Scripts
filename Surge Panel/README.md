@@ -20,6 +20,8 @@
 3. 首次运行在「设置」页填写 API 地址与 Key
 4. 可选：Scripting 设置 → Show Home Tab → 选择本脚本，首页直接使用
 
+更新记录见 [`changelog.md`](./changelog.md)。导入后若说明内容有变化，脚本会弹出更新说明；也可在「设置 → 更新说明」随时查看。
+
 ## 技术要点
 
 - 数据层：`lib/surgeApi.ts` 封装全部 Surge HTTP 端点；`lib/store.ts` 订阅式全局 store。实时速率独立 1Hz 轮询 `/v1/traffic`（内存中保留 60 点）；内存/引擎指标按设置间隔拉取 Prometheus，历史存 Storage

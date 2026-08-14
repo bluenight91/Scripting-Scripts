@@ -33,6 +33,7 @@ import {
   type FeatureKey,
 } from "../lib/surgeApi"
 import { HomeTitleWrapper } from "../components/HomeTitleWrapper"
+import { ChangelogView } from "../components/ReleaseNotesSheet"
 import { clearHistory, saveConfig, savePrefs, useStore } from "../lib/store"
 import { ScriptsView } from "./ScriptsView"
 
@@ -230,6 +231,7 @@ export function SettingsView() {
         header={<Text>面板</Text>}
         footer={<Text font={13}>刷新间隔用于内存趋势与引擎指标。实时速率图固定 1 秒采样（/v1/traffic），与 Surge Web Dashboard 一致。</Text>}
       >
+        <NavigationLink title="更新说明" destination={<ChangelogView />} />
         <Toggle
           title="自动刷新"
           value={state.prefs.autoRefresh}

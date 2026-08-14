@@ -16,6 +16,7 @@ import {
   VStack,
 } from "scripting"
 import { startPolling, stopPolling, registerTabJump } from "./lib/store"
+import { useMarkdownReleaseNotesSheet } from "./components/ReleaseNotesSheet"
 import { OverviewView } from "./views/OverviewView"
 import { PoliciesView } from "./views/PoliciesView"
 import { TrafficView } from "./views/TrafficView"
@@ -43,6 +44,11 @@ export function SurgePanelApp() {
   const selection = useObservable<number>(0)
   // 首页 Tab 环境（Scripting App 首页承载）：改用顶部分段选择器，避免与 App 底栏叠出双层标签栏
   const isHome = Script.env === "home_screen"
+  const releaseNotes = useMarkdownReleaseNotesSheet({
+    markdownFile: "changelog.md",
+    storageKey: "surge-panel:release-notes:last-seen-hash",
+    title: "更新说明",
+  })
 
   useEffect(() => {
     startPolling()
@@ -56,7 +62,11 @@ export function SurgePanelApp() {
     const current = selection.value
     return (
       <NavigationStack>
-        <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+        <VStack
+          spacing={0}
+          frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+          sheet={releaseNotes}
+        >
           <Picker
             label={<Text>页面切换</Text>}
             pickerStyle="segmented"
@@ -122,6 +132,7 @@ export function SurgePanelApp() {
         tabBarMinimizeBehavior="onScrollDown"
         scrollEdgeEffectHidden="bottom"
         ignoresSafeArea={{ regions: "container", edges: "bottom" }}
+        sheet={releaseNotes}
       >
         <Tab title="总览" systemImage="speedometer" value={0}>
           <OverviewView />
