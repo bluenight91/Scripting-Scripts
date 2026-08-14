@@ -26,7 +26,7 @@
 
 - 数据层：`lib/surgeApi.ts` 封装全部 Surge HTTP 端点；`lib/store.ts` 订阅式全局 store。实时速率独立 1Hz 轮询 `/v1/traffic`（内存中保留 60 点）；内存/引擎指标按设置间隔拉取 Prometheus，历史存 Storage
 - 图表：SwiftUI Charts；折线用 `interpolationMethod: "monotone"` 避免 Catmull-Rom 过冲到负值；Y 轴 `chartYScale` 从 0 起；多序列用单 `LineChart` + `foregroundStyleBy`
-- 首页适配：`home_screen_default_ui.tsx` 入口，首页模式用顶部分段选择器 + 左右滑动翻页（隐藏底栏，避免与 Scripting 底栏重叠）；全屏底栏已标明当前 Tab，内容区不再重复页名
+- 首页适配：`home_screen_default_ui.tsx` 入口，首页模式用顶部分段选择器 + 左右滑动翻页，并保留 Scripting 底栏以便切换其它 Tab；全屏底栏已标明当前 Tab，内容区不再重复页名
 - 不做：Mac 设备管理、配置切换、系统代理；MITM CA / `/v1/environment`
 
 ## License
