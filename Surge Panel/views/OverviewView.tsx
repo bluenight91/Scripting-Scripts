@@ -36,6 +36,23 @@ export function downsample(pts: HistoryPoint[], n: number): HistoryPoint[] {
   return out
 }
 
+/** bytes/s → KB/s，一位小数 */
+function toKbps(bytesPerSec: number): number {
+  return Math.round((bytesPerSec ?? 0) / 102.4) / 10
+}
+
+/** Y 轴上界：1/2/5×10^n，并留约 15% 余量。速率不能为负，下界固定 0。 */
+function niceUpper(n: number): number {
+  if (!Number.isFinite(n) || n <= 0) return 10
+  const padded = n * 1.15
+  const mag = 10 ** Math.floor(Math.log10(padded))
+  const norm = padded / mag
+  const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10
+  return nice * mag
+}
+
+const LINE_STYLE = { lineWidth: 2, lineCap: "round" as const, lineJoin: "round" as const }
+
 export function OverviewView() {
   const state = useStore()
   const [showDiag, setShowDiag] = useState(false)
@@ -50,10 +67,13 @@ export function OverviewView() {
   const peakOut = state.peakSpeeds.outSpeed
 
   const chartPts = downsample(state.history, 60)
-  const marks = chartPts.map((p) => ({
+  const memValues = chartPts.map((p) => Math.round((p.mem / (1024 * 1024)) * 10) / 10)
+  const memYMax = niceUpper(Math.max(0, ...memValues))
+  const marks = chartPts.map((p, i) => ({
     label: new Date(p.t),
-    value: Math.round((p.mem / (1024 * 1024)) * 10) / 10,
-    interpolationMethod: "catmullRom" as const,
+    value: memValues[i],
+    // monotone 保单调、不过冲；catmullRom 会在尖峰前插出负值
+    interpolationMethod: "monotone" as const,
     foregroundStyle: gradient("linear", {
       colors: ["rgba(88,86,214,0.35)", "rgba(88,86,214,0.02)"],
       startPoint: "top" as const,
@@ -63,21 +83,25 @@ export function OverviewView() {
 
   // 实时速率双线（KB/s）：foregroundStyleBy 是官方的多序列写法；
   // 两个 LineChart 子组件会被串成一条折线（实测出现连接线伪影），必须用单 LineChart + 序列编码
-  // 数据来自 /v1/traffic 的 1Hz 滑动窗口（与 yasd 一致），不再从 15 分钟粗采样里降采样
   const speedMarks = state.speedHistory.flatMap((p) => [
     {
       label: new Date(p.t),
-      value: Math.round((p.inSpeed ?? 0) / 102.4) / 10,
-      interpolationMethod: "catmullRom" as const,
+      value: toKbps(p.inSpeed),
+      interpolationMethod: "monotone" as const,
+      lineStyle: LINE_STYLE,
       foregroundStyleBy: { value: "下载", label: "下载" },
     },
     {
       label: new Date(p.t),
-      value: Math.round((p.outSpeed ?? 0) / 102.4) / 10,
-      interpolationMethod: "catmullRom" as const,
+      value: toKbps(p.outSpeed),
+      interpolationMethod: "monotone" as const,
+      lineStyle: LINE_STYLE,
       foregroundStyleBy: { value: "上传", label: "上传" },
     },
   ])
+  const speedYMax = niceUpper(
+    Math.max(0, ...state.speedHistory.flatMap((p) => [toKbps(p.inSpeed), toKbps(p.outSpeed)]))
+  )
 
   return (
     <ScrollView
@@ -200,7 +224,15 @@ export function OverviewView() {
             <Text font={11} foregroundStyle="secondaryLabel">KB/s · 1 秒采样 · 近 1 分钟</Text>
           </HStack>
           {state.traffic && speedMarks.length >= 4 ? (
-            <Chart frame={{ height: 150 }}>
+            <Chart
+              frame={{ height: 168 }}
+              chartYScale={{ domain: { from: 0, to: speedYMax }, type: "linear" }}
+              chartLegend={{ position: "bottom", spacing: 4 }}
+              chartForegroundStyleScale={{
+                "下载": "systemBlue",
+                "上传": "systemGreen",
+              }}
+            >
               <LineChart marks={speedMarks} />
             </Chart>
           ) : (
@@ -222,7 +254,10 @@ export function OverviewView() {
             <Text font={11} foregroundStyle="secondaryLabel">{`${state.history.length} 个采样点`}</Text>
           </HStack>
           {marks.length >= 2 ? (
-            <Chart frame={{ height: 150 }}>
+            <Chart
+              frame={{ height: 150 }}
+              chartYScale={{ domain: { from: 0, to: memYMax }, type: "linear" }}
+            >
               <AreaChart marks={marks} />
             </Chart>
           ) : (

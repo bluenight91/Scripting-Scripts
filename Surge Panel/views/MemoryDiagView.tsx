@@ -47,8 +47,9 @@ export function MemoryDiagView() {
   const marks = pts.map((p) => ({
     label: new Date(p.t),
     value: Math.round((p.mem / (1024 * 1024)) * 10) / 10,
-    interpolationMethod: "catmullRom" as const,
+    interpolationMethod: "monotone" as const,
   }))
+  const memYMax = Math.max(10, Math.max(0, ...marks.map((m) => m.value)) * 1.15)
 
   return (
     <NavigationStack>
@@ -65,7 +66,10 @@ export function MemoryDiagView() {
               <Text font={15} fontWeight="semibold">内存占用历史</Text>
             </HStack>
             {marks.length >= 2 ? (
-              <Chart frame={{ height: 180 }}>
+              <Chart
+                frame={{ height: 180 }}
+                chartYScale={{ domain: { from: 0, to: memYMax }, type: "linear" }}
+              >
                 <LineChart marks={marks.map((m) => ({ ...m, foregroundStyle: "systemPurple" as const }))} />
                 <AreaChart
                   marks={marks.map((m) => ({
