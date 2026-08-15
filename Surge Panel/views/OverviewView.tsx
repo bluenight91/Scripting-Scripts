@@ -10,14 +10,16 @@ import {
   ScrollView,
   Spacer,
   Text,
+  Toggle,
   useEffect,
   useState,
   VStack,
 } from "scripting"
 import { PanelCard } from "../components/PanelCard"
 import { StatCard } from "../components/StatCard"
-import { openRequestsSegment, refreshNow, useStore, type HistoryPoint } from "../lib/store"
-import { getEvents, type SurgeEvent } from "../lib/surgeApi"
+import { activeInstance, openRequestsSegment, refreshNow, useStore, type HistoryPoint } from "../lib/store"
+import { getEvents, getFeature, setFeature, FEATURE_LABELS, type FeatureKey, type SurgeEvent } from "../lib/surgeApi"
+import { InstancesView } from "./InstancesView"
 import {
   buildInfo,
   formatBytesParts,
@@ -59,8 +61,11 @@ const LINE_STYLE = { lineWidth: 2.5, lineCap: "round" as const, lineJoin: "round
 
 export function OverviewView() {
   const state = useStore()
+  const inst = activeInstance()
   const [showDiag, setShowDiag] = useState(false)
+  const [showInst, setShowInst] = useState(false)
   const [events, setEvents] = useState<SurgeEvent[] | null>(null)
+  const [features, setFeatures] = useState<Record<FeatureKey, boolean> | null>(null)
 
   const mem = state.samples ? gaugeValue(state.samples, "surge_memory_bytes") : null
   const uptime = state.samples ? gaugeValue(state.samples, "surge_uptime_seconds") : null
@@ -86,10 +91,36 @@ export function OverviewView() {
       .catch(() => {
         if (!cancelled) setEvents(null)
       })
+    Promise.all(
+      (Object.keys(FEATURE_LABELS) as FeatureKey[]).map(async (k) => {
+        const r = await getFeature(state.config, k)
+        return [k, r.enabled] as const
+      })
+    )
+      .then((pairs) => {
+        if (!cancelled) setFeatures(Object.fromEntries(pairs) as Record<FeatureKey, boolean>)
+      })
+      .catch(() => {
+        if (!cancelled) setFeatures(null)
+      })
     return () => {
       cancelled = true
     }
   }, [state.config, state.samples])
+
+  async function toggleFeature(k: FeatureKey, v: boolean) {
+    setFeatures((f) => (f ? { ...f, [k]: v } : f))
+    try {
+      await setFeature(state.config, k, v)
+    } catch {
+      try {
+        const r = await getFeature(state.config, k)
+        setFeatures((f) => (f ? { ...f, [k]: r.enabled } : f))
+      } catch {
+        // 保持乐观值
+      }
+    }
+  }
 
   async function reload() {
     await Promise.all([
@@ -144,21 +175,27 @@ export function OverviewView() {
       axes="vertical"
       refreshable={reload}
       sheet={{
-        isPresented: showDiag,
-        onChanged: setShowDiag,
-        content: <MemoryDiagView />,
+        isPresented: showDiag || showInst,
+        onChanged: (v: boolean) => {
+          if (!v) {
+            setShowDiag(false)
+            setShowInst(false)
+          }
+        },
+        content: showDiag ? <MemoryDiagView /> : <InstancesView />,
       }}
     >
       <VStack alignment="leading" spacing={UI.pageSpacing} padding={UI.pagePadding}>
         {/* 品牌头（不是页名） */}
         <HStack>
           <VStack alignment="leading" spacing={3}>
-            <HStack spacing={8}>
-              <Text font={isHome ? 22 : 28} fontWeight="bold">Surge</Text>
+            <HStack spacing={8} onTapGesture={() => setShowInst(true)}>
+              <Text font={isHome ? 22 : 28} fontWeight="bold">{inst.name}</Text>
+              <Image systemName="chevron.up.chevron.down" font={12} foregroundStyle="secondaryLabel" />
               {state.error ? (
                 <HStack spacing={4}>
                   <Image systemName="circle.fill" foregroundStyle="systemRed" font={8} />
-                  <Text font={13} foregroundStyle="systemRed">连接失败</Text>
+                  <Text font={13} foregroundStyle="systemRed">未连接</Text>
                 </HStack>
               ) : state.running ? (
                 <HStack spacing={4}>
@@ -173,7 +210,9 @@ export function OverviewView() {
               )}
             </HStack>
             <Text font={13} foregroundStyle="secondaryLabel">
-              {state.updatedAt ? `更新于 ${formatClock(state.updatedAt)}` : "正在连接…"}
+              {state.updatedAt
+                ? `更新于 ${formatClock(state.updatedAt)} · ${inst.host}:${inst.port}`
+                : "正在连接…"}
             </Text>
           </VStack>
           <Spacer />
@@ -182,6 +221,8 @@ export function OverviewView() {
               <Text font={13} foregroundStyle="secondaryLabel">{`v${info.version}`}</Text>
               <Text font={UI.captionFont} foregroundStyle="tertiaryLabel">{`Build ${info.build}`}</Text>
             </VStack>
+          ) : inst.version ? (
+            <Text font={13} foregroundStyle="secondaryLabel">{`v${inst.version}`}</Text>
           ) : null}
         </HStack>
 
@@ -189,6 +230,20 @@ export function OverviewView() {
           <Text font={13} foregroundStyle="systemRed">
             {connectErrorText(state.error)}
           </Text>
+        ) : null}
+
+        {features ? (
+          <PanelCard spacing={8}>
+            <Text font={UI.titleFont} fontWeight="semibold">能力</Text>
+            {(Object.keys(FEATURE_LABELS) as FeatureKey[]).map((k) => (
+              <Toggle
+                key={k}
+                title={FEATURE_LABELS[k]}
+                value={features[k]}
+                onChanged={(v: boolean) => toggleFeature(k, v)}
+              />
+            ))}
+          </PanelCard>
         ) : null}
 
         <VStack spacing={12}>

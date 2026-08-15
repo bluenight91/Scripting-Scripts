@@ -3,14 +3,17 @@ import {
   Button,
   HStack,
   List,
+  NavigationLink,
+  Picker,
   Section,
   Spacer,
   Text,
+  TextField,
   useEffect,
   useState,
   VStack,
 } from "scripting"
-import { getScripts, runCronScript, type SurgeScript } from "../lib/surgeApi"
+import { evaluateScript, getScripts, runCronScript, type SurgeScript } from "../lib/surgeApi"
 import { useStore } from "../lib/store"
 
 const TYPE_LABELS: Record<string, string> = {
@@ -63,6 +66,9 @@ export function ScriptsView() {
 
   return (
     <List navigationTitle="脚本">
+      <Section>
+        <NavigationLink title="调试执行" destination={<ScriptEvaluateView />} />
+      </Section>
       {error ? (
         <Section>
           <Text foregroundStyle="systemRed">{error}</Text>
@@ -79,7 +85,7 @@ export function ScriptsView() {
       ) : (
         <Section
           header={<Text>{`${scripts.length} 个脚本`}</Text>}
-          footer={<Text font={12}>定时脚本可手动触发执行；脚本开关需在 Surge 配置中修改</Text>}
+          footer={<Text font={12}>定时脚本可手动触发。开关需在 Surge 配置中修改。</Text>}
         >
           {scripts.map((s) => (
             <VStack key={s.name} alignment="leading" spacing={3}>
@@ -119,6 +125,55 @@ export function ScriptsView() {
           ))}
         </Section>
       )}
+    </List>
+  )
+}
+
+function ScriptEvaluateView() {
+  const state = useStore()
+  const [code, setCode] = useState('console.log("hello from Surge Panel")')
+  const [mockType, setMockType] = useState("cron")
+  const [result, setResult] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function run() {
+    if (busy) return
+    setBusy(true)
+    setResult(null)
+    try {
+      const r = await evaluateScript(state.config, code, mockType, 5)
+      setResult(typeof r === "string" ? r : JSON.stringify(r, null, 2) || "执行完成（无返回）")
+    } catch (e) {
+      setResult(`失败：${e}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <List navigationTitle="调试执行">
+      <Section footer={<Text font={13}>POST /v1/scripting/evaluate。$trigger 为 http-api。</Text>}>
+        <Picker title="类型" value={mockType} onChanged={setMockType}>
+          <Text tag="cron">cron</Text>
+          <Text tag="http-request">http-request</Text>
+          <Text tag="http-response">http-response</Text>
+          <Text tag="generic">generic</Text>
+          <Text tag="event">event</Text>
+          <Text tag="dns">dns</Text>
+        </Picker>
+        <TextField
+          title="脚本"
+          value={code}
+          onChanged={setCode}
+          prompt="script_text"
+        />
+        <Button title={busy ? "执行中…" : "执行"} systemImage="play.circle" disabled={busy} action={() => { void run() }} />
+      </Section>
+      {result ? (
+        <Section header={<Text>结果</Text>}>
+          <Text font={13} multilineTextAlignment="leading">{result}</Text>
+        </Section>
+      ) : null}
     </List>
   )
 }

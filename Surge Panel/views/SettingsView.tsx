@@ -7,9 +7,7 @@ import {
   Picker,
   Script,
   Section,
-  SecureField,
   Text,
-  TextField,
   Toggle,
   useEffect,
   useState,
@@ -31,14 +29,15 @@ import {
   setOutboundGlobal,
   setOutboundMode,
   stopEngine,
+  FEATURE_LABELS,
   type FeatureKey,
 } from "../lib/surgeApi"
-import { HomeTitleWrapper } from "../components/HomeTitleWrapper"
 import { ChangelogView } from "../components/ReleaseNotesSheet"
-import { clearHistory, saveConfig, savePrefs, useStore } from "../lib/store"
+import { clearHistory, savePrefs, useStore } from "../lib/store"
 import { ScriptsView } from "./ScriptsView"
+import { InstancesView } from "./InstancesView"
 
-const FEATURE_LABELS: Record<FeatureKey, string> = {
+const ENGINE_FEATURE_LABELS: Record<FeatureKey, string> = {
   mitm: "MitM",
   capture: "捕获 HTTP 请求",
   rewrite: "重写",
@@ -48,13 +47,6 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
 export function SettingsView() {
   const state = useStore()
   const dismiss = Navigation.useDismiss()
-
-  // 连接表单
-  const [protocol, setProtocol] = useState<"http" | "https">(state.config.protocol)
-  const [host, setHost] = useState(state.config.host)
-  const [port, setPort] = useState(state.config.port)
-  const [key, setKey] = useState(state.config.key)
-  const [saved, setSaved] = useState(false)
 
   // 引擎状态
   const [outbound, setOutbound] = useState<string | null>(null)
@@ -103,12 +95,6 @@ export function SettingsView() {
   useEffect(() => {
     loadEngineState()
   }, [state.config])
-
-  function applyConnection() {
-    saveConfig({ protocol, host, port, key })
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
 
   async function changeOutbound(mode: string) {
     setOutbound(mode)
@@ -188,7 +174,6 @@ export function SettingsView() {
   }
 
   return (
-    <HomeTitleWrapper title="设置">
     <List
       navigationTitle={Script.env === "home_screen" ? undefined : "设置"}
       confirmationDialog={{
@@ -215,16 +200,9 @@ export function SettingsView() {
         ),
       }}
     >
-      {/* 连接 */}
-      <Section header={<Text>连接</Text>} footer={saved ? <Text font={13} foregroundStyle="systemGreen">已保存并重新连接</Text> : <Text font={13}>填写 Surge HTTP API 地址与 Key 后保存。默认端口 6166。</Text>}>
-        <Picker title="协议" pickerStyle="segmented" value={protocol} onChanged={(v: string) => setProtocol(v as "http" | "https")}>
-          <Text tag="https">https</Text>
-          <Text tag="http">http</Text>
-        </Picker>
-        <TextField label={<Text font={17}>主机</Text>} value={host} onChanged={setHost} prompt="127.0.0.1" />
-        <TextField label={<Text font={17}>端口</Text>} value={port} onChanged={setPort} prompt="6166" />
-        <SecureField label={<Text font={17}>API Key</Text>} value={key} onChanged={setKey} prompt="X-Key" />
-        <Button title="保存并连接" systemImage="checkmark.circle" action={applyConnection} />
+      {/* 实例 */}
+      <Section header={<Text>实例</Text>} footer={<Text font={13}>可添加本机与网关等多个 Surge HTTP API，点按切换。当前：{state.instances.find((i) => i.id === state.activeId)?.name ?? "—"}（{state.config.host}:{state.config.port}）</Text>}>
+        <NavigationLink title="管理实例" destination={<InstancesView />} />
       </Section>
 
       {/* 面板 */}
@@ -287,8 +265,8 @@ export function SettingsView() {
         {features === null ? (
           <Text foregroundStyle="secondaryLabel">{engineError ? "功能开关不可用" : "加载功能开关…"}</Text>
         ) : (
-          (Object.keys(FEATURE_LABELS) as FeatureKey[]).map((k) => (
-            <Toggle key={k} title={FEATURE_LABELS[k]} value={features[k]} onChanged={(v: boolean) => toggleFeature(k, v)} />
+          (Object.keys(ENGINE_FEATURE_LABELS) as FeatureKey[]).map((k) => (
+            <Toggle key={k} title={ENGINE_FEATURE_LABELS[k]} value={features[k]} onChanged={(v: boolean) => toggleFeature(k, v)} />
           ))
         )}
         {modules === null ? (
@@ -326,7 +304,6 @@ export function SettingsView() {
         </Section>
       )}
     </List>
-    </HomeTitleWrapper>
   )
 }
 
@@ -340,12 +317,14 @@ function ProfileView() {
   const state = useStore()
   const [profile, setProfile] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sensitive, setSensitive] = useState(false)
 
   useEffect(() => {
-    getCurrentProfile(state.config)
+    setProfile(null)
+    getCurrentProfile(state.config, sensitive)
       .then((r) => setProfile(typeof r === "string" ? r : r.profile ?? ""))
       .catch((e) => setError(String(e)))
-  }, [state.config])
+  }, [state.config, sensitive])
 
   const sections = profile ? parseProfileSections(profile) : []
 
@@ -354,6 +333,9 @@ function ProfileView() {
       navigationTitle="当前配置"
       tabBarVisibility="visible"
     >
+      <Section footer={<Text font={13}>显示敏感字段会再次向 Surge 拉取配置（含密码）。</Text>}>
+        <Toggle title="显示敏感字段" value={sensitive} onChanged={setSensitive} />
+      </Section>
       {error ? (
         <Section>
           <Text foregroundStyle="systemRed">{error}</Text>

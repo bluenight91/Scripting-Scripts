@@ -1,7 +1,6 @@
-// 全局状态：配置、指标快照、采样历史、轮询循环
+// 当前实例的指标、流量、轮询；实例列表见 instances.ts
 import { useEffect, useState } from "scripting"
 import {
-  DEFAULT_CONFIG,
   fetchMetrics,
   getRecentRequests,
   getTraffic,
@@ -10,6 +9,14 @@ import {
   type TrafficSnapshot,
 } from "./surgeApi"
 import { gaugeValue, type MetricSample } from "./metrics"
+import {
+  findInstance,
+  historyKey,
+  instanceToConfig,
+  loadInstanceState,
+  persistInstanceState,
+  type SurgeInstance,
+} from "./instances"
 
 export type HistoryPoint = {
   t: number
@@ -18,7 +25,6 @@ export type HistoryPoint = {
   outSpeed: number
 }
 
-/** 实时速率点（内存中滑动窗口，不持久化） */
 export type SpeedPoint = {
   t: number
   inSpeed: number
@@ -34,6 +40,8 @@ export type Prefs = {
 export type RequestsSegment = "active" | "recent" | "events" | "dns" | "rules"
 
 export type StoreState = {
+  instances: SurgeInstance[]
+  activeId: string
   config: SurgeConfig
   prefs: Prefs
   samples: MetricSample[] | null
@@ -48,19 +56,14 @@ export type StoreState = {
   speedHistory: SpeedPoint[]
   traffic: TrafficSnapshot | null
   requestsSegment: RequestsSegment
+  visibleTab: number
 }
 
-const CONFIG_KEY = "surge_panel_config"
 const PREFS_KEY = "surge_panel_prefs"
-const HISTORY_KEY = "surge_panel_history"
-
 const DEFAULT_PREFS: Prefs = { autoRefresh: true, intervalSec: 5, maxPoints: 720 }
 
-// 对齐 yasd（Surge Web Dashboard）：/v1/traffic 1Hz + 60 点滑动窗口
 export const SPEED_REFRESH_MS = 1000
 export const SPEED_HISTORY_SIZE = 60
-
-// ---------- 内部状态 ----------
 
 function emptySpeedHistory(now = Date.now()): SpeedPoint[] {
   const out: SpeedPoint[] = []
@@ -80,8 +83,23 @@ function maxSpeedFromHistory(history: HistoryPoint[]): { inSpeed: number; outSpe
   return { inSpeed, outSpeed }
 }
 
+function readHistory(id: string): HistoryPoint[] {
+  const raw = Storage.get(historyKey(id))
+  return Array.isArray(raw) ? (raw as HistoryPoint[]) : []
+}
+
+function writeHistory(id: string, history: HistoryPoint[]) {
+  Storage.set(historyKey(id), history)
+}
+
+const boot = loadInstanceState()
+const bootInst = findInstance(boot.instances, boot.activeId) ?? boot.instances[0]
+const bootHistory = readHistory(boot.activeId)
+
 let state: StoreState = {
-  config: DEFAULT_CONFIG,
+  instances: boot.instances,
+  activeId: boot.activeId,
+  config: instanceToConfig(bootInst),
   prefs: DEFAULT_PREFS,
   samples: null,
   prevSamples: null,
@@ -89,12 +107,13 @@ let state: StoreState = {
   error: null,
   running: false,
   speeds: { inSpeed: 0, outSpeed: 0 },
-  peakSpeeds: { inSpeed: 0, outSpeed: 0 },
+  peakSpeeds: maxSpeedFromHistory(bootHistory),
   failedRecent: 0,
-  history: [],
+  history: bootHistory,
   speedHistory: emptySpeedHistory(),
   traffic: null,
   requestsSegment: "active",
+  visibleTab: 0,
 }
 
 const listeners = new Set<() => void>()
@@ -113,7 +132,28 @@ function patch(partial: Partial<StoreState>) {
   emit()
 }
 
-// ---------- 对外 API ----------
+function applyActive(instances: SurgeInstance[], activeId: string, extra?: Partial<StoreState>) {
+  const inst = findInstance(instances, activeId) ?? instances[0]
+  persistInstanceState(instances, inst.id)
+  const history = readHistory(inst.id)
+  patch({
+    instances,
+    activeId: inst.id,
+    config: instanceToConfig(inst),
+    history,
+    speedHistory: emptySpeedHistory(),
+    peakSpeeds: maxSpeedFromHistory(history),
+    samples: null,
+    prevSamples: null,
+    traffic: null,
+    speeds: { inSpeed: 0, outSpeed: 0 },
+    failedRecent: 0,
+    error: null,
+    running: false,
+    updatedAt: null,
+    ...extra,
+  })
+}
 
 export function subscribe(fn: () => void): () => void {
   listeners.add(fn)
@@ -126,31 +166,22 @@ export function getState(): StoreState {
   return state
 }
 
-/** React hook：订阅 store，返回当前状态 */
 export function useStore(): StoreState {
   const [s, setS] = useState<StoreState>(getState())
   useEffect(() => subscribe(() => setS(getState())), [])
   return s
 }
 
-export function initStore() {
-  const savedConfig = Storage.get(CONFIG_KEY) as SurgeConfig | null
-  const savedPrefs = Storage.get(PREFS_KEY) as Prefs | null
-  const savedHistory = Storage.get(HISTORY_KEY) as HistoryPoint[] | null
-  const history = Array.isArray(savedHistory) ? savedHistory : []
-  patch({
-    config: savedConfig ?? DEFAULT_CONFIG,
-    prefs: savedPrefs ?? DEFAULT_PREFS,
-    history,
-    speedHistory: emptySpeedHistory(),
-    peakSpeeds: maxSpeedFromHistory(history),
-  })
+export function activeInstance(): SurgeInstance {
+  return findInstance(state.instances, state.activeId) ?? state.instances[0]
 }
 
-export function saveConfig(config: SurgeConfig) {
-  Storage.set(CONFIG_KEY, config)
-  patch({ config })
-  refreshNow()
+export function initStore() {
+  const savedPrefs = Storage.get(PREFS_KEY) as Prefs | null
+  const loaded = loadInstanceState()
+  applyActive(loaded.instances, loaded.activeId, {
+    prefs: savedPrefs ?? DEFAULT_PREFS,
+  })
 }
 
 export function savePrefs(prefs: Prefs) {
@@ -160,7 +191,7 @@ export function savePrefs(prefs: Prefs) {
 }
 
 export function clearHistory() {
-  Storage.remove(HISTORY_KEY)
+  Storage.remove(historyKey(state.activeId))
   patch({
     history: [],
     speedHistory: emptySpeedHistory(),
@@ -168,7 +199,60 @@ export function clearHistory() {
   })
 }
 
-// ---------- Tab 跳转（总览事件条 → 请求工作台） ----------
+export function setVisibleTab(index: number) {
+  if (state.visibleTab === index) return
+  patch({ visibleTab: index })
+}
+
+/** 更新当前实例的连接字段（兼容旧 saveConfig 调用） */
+export function saveConfig(config: SurgeConfig) {
+  updateInstance(state.activeId, config)
+}
+
+export function updateInstance(id: string, patchInst: Partial<SurgeInstance>) {
+  const instances = state.instances.map((i) => (i.id === id ? { ...i, ...patchInst } : i))
+  persistInstanceState(instances, state.activeId)
+  if (id === state.activeId) {
+    const inst = findInstance(instances, id)!
+    patch({ instances, config: instanceToConfig(inst) })
+    refreshNow()
+  } else {
+    patch({ instances })
+  }
+}
+
+export function addInstance(inst: SurgeInstance) {
+  const instances = [...state.instances, inst]
+  persistInstanceState(instances, state.activeId)
+  patch({ instances })
+}
+
+export async function switchInstance(id: string) {
+  if (id === state.activeId) return
+  const wasStarted = started
+  stopPolling()
+  applyActive(state.instances, id)
+  if (wasStarted) await startPolling()
+  else await refreshNow()
+}
+
+export async function deleteInstance(id: string) {
+  if (state.instances.length <= 1) throw new Error("至少保留一个实例")
+  const instances = state.instances.filter((i) => i.id !== id)
+  Storage.remove(historyKey(id))
+  if (id === state.activeId) {
+    const wasStarted = started
+    stopPolling()
+    applyActive(instances, instances[0].id)
+    if (wasStarted) await startPolling()
+    else await refreshNow()
+  } else {
+    persistInstanceState(instances, state.activeId)
+    patch({ instances })
+  }
+}
+
+// ---------- Tab 跳转 ----------
 
 let tabJump: ((index: number) => void) | null = null
 
@@ -189,7 +273,7 @@ export function openRequestsSegment(segment: RequestsSegment) {
   tabJump?.(3)
 }
 
-// ---------- 实时速率（/v1/traffic，1Hz） ----------
+// ---------- 实时速率 ----------
 
 function aggregateCurrentSpeeds(entries: Record<string, TrafficEntry>): {
   inSpeed: number
@@ -250,25 +334,16 @@ function armTraffic(delay: number) {
   }, delay)
 }
 
-// ---------- 指标采样（内存 / Prometheus，用户间隔） ----------
-
 async function tick() {
-  const { config, prefs, samples: prev, history, speeds } = state
+  const { config, prefs, samples: prev, history, speeds, activeId } = state
   const now = Date.now()
   try {
     const samples = await fetchMetrics(config)
     const mem = gaugeValue(samples, "surge_memory_bytes") ?? 0
-
-    const point: HistoryPoint = {
-      t: now,
-      mem,
-      inSpeed: speeds.inSpeed,
-      outSpeed: speeds.outSpeed,
-    }
+    const point: HistoryPoint = { t: now, mem, inSpeed: speeds.inSpeed, outSpeed: speeds.outSpeed }
     const newHistory = [...history, point]
     while (newHistory.length > prefs.maxPoints) newHistory.shift()
-    Storage.set(HISTORY_KEY, newHistory)
-
+    writeHistory(activeId, newHistory)
     patch({
       samples,
       prevSamples: prev ?? null,
@@ -285,14 +360,13 @@ async function tick() {
     })
   }
 
-  // 每 3 个采样周期统计一次近期失败请求数
   tickCount++
   if (tickCount % 3 === 1) {
     try {
       const { requests } = await getRecentRequests(state.config)
       patch({ failedRecent: requests.filter((r) => r.failed).length })
     } catch {
-      // 忽略：失败数不是关键指标
+      // 忽略
     }
   }
 }
@@ -339,8 +413,6 @@ export async function refreshNow() {
   await Promise.all([tick(), tickTraffic()])
 }
 
-// ---------- 内存趋势诊断 ----------
-
 export function analyzeMemoryTrend(history: HistoryPoint[]): {
   level: "ok" | "warning" | "insufficient"
   message: string
@@ -378,8 +450,6 @@ export function analyzeMemoryTrend(history: HistoryPoint[]): {
   const last = windowPts[windowPts.length - 1]
   const dtMin = (last.t - first.t) / 60000
   const slopeMBPerMin = dtMin > 0 ? (last.mem - first.mem) / (1024 * 1024) / dtMin : 0
-
-  // 统计持续上涨段：末段连续上升占比
   let rising = 0
   const tail = windowPts.slice(-Math.min(windowPts.length, 30))
   for (let i = 1; i < tail.length; i++) {
@@ -394,7 +464,6 @@ export function analyzeMemoryTrend(history: HistoryPoint[]): {
     windowMin: dtMin,
     samples: windowPts.length,
   }
-
   if (slopeMBPerMin > 3 && risingRatio > 0.85) {
     return {
       level: "warning",

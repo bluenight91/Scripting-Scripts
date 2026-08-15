@@ -1,14 +1,15 @@
 # Surge Panel for Scripting
 
-一个运行在 iOS [Scripting](https://github.com/Scripting) App 上的 Surge 监控面板脚本，通过 Surge HTTP API + Prometheus Metrics Endpoint 提供五标签仪表盘，支持 Scripting 首页 Tab 直挂。
+一个运行在 iOS [Scripting](https://github.com/Scripting) App 上的 Surge 监控面板（2.0）。通过 Surge HTTP API + Prometheus Metrics 提供五标签仪表盘，支持多个实例切换，可挂到 Scripting 首页 Tab。
 
 ## 功能
 
-- **总览**：运行态仪表（内存 / 时长 / 实时上下行 / 活动连接 / DNS 缓存），底部事件摘要条（点按进入请求 Tab 事件分段），近 1 分钟实时速率双折线图（1 秒采样，数据来自 `/v1/traffic`，对齐 [yasd](https://github.com/geekdada/yasd)），内存历史面积图
-- **策略**：按 Surge 配置中的策略组顺序排列；组名搜索与下拉刷新；点按切换节点；全节点延迟显示（基于 Surge 基准测试缓存 `/v1/policies/benchmark_results`，覆盖内嵌/链式节点）；自动组（url-test 等）支持组测速与「最优」当选标记
-- **流量**：实时合计、网卡 interface 实时速度、活动 connector、节点累计排行（均来自 `/v1/traffic`）
-- **请求**：顶部分段工作台（活动 | 最近 | 事件 | DNS | 规则）。活动连接可终止；最近请求含规则命中/耗时分解；DNS 缓存详情与延迟测试；规则浏览器（搜索/筛选）
-- **设置**：连接（API）→ 面板（自动刷新/历史）→ 引擎（出站、MitM/捕获/重写/脚本开关、模块、日志）→ 脚本 → 配置（当前配置 / 重载 / 停引擎）
+- **多实例**：本机 / 网关等多个 HTTP API；总览点名称切换；设置里添加、编辑、测试连通、删除。一次只连接一个实例。
+- **总览**：实例状态、内存 / 时长 / 实时上下行 / 活动连接 / DNS，MitM·捕获·重写·脚本快捷开关，近 1 分钟速率图（1 秒采样，对齐 [YASD](https://github.com/geekdada/yasd)），内存历史，事件摘要
+- **策略**：按配置 `[Proxy Group]` 顺序；搜索；点按切换；基准测试延迟；自动组测速与「最优」标记；嵌套组可再进入
+- **流量**：实时合计、网卡 / 节点明细（实时·累计·峰值排序）、节点累计排行
+- **请求**：活动 | 最近 | 事件 | DNS | 规则。活动/最近可搜索排序；活动连接可终止；DNS 含静态 Host 与动态缓存、刷新与延迟测试
+- **设置**：实例管理、刷新间隔、出站模式、功能开关、模块、日志、脚本（含调试执行）、当前配置（可选敏感字段）、重载 / 停引擎
 
 ## 使用
 
@@ -17,17 +18,17 @@
    - 下载仓库根目录的 [`Surge Panel.scripting`](../Surge%20Panel.scripting)，用 Scripting 打开
    - 或将整个 `Surge Panel` 目录放入 Scripting 的脚本目录
 2. 在 Surge 中开启 HTTP API（`http-api = 0.0.0.0:6166` + `http-api-key`）与 Prometheus Metrics Endpoint
-3. 首次运行在「设置」页填写 API 地址与 Key
-4. 可选：Scripting 设置 → Show Home Tab → 选择本脚本，首页直接使用
+3. 首次运行会生成「本机」实例，在「设置 → 实例」填写 Key；需要监控其它设备时再添加实例
+4. 可选：Scripting 设置 → Show Home Tab → 选择本脚本
 
-更新记录见 [`changelog.md`](./changelog.md)。导入后若说明内容有变化，脚本会弹出更新说明；也可在「设置 → 更新说明」随时查看。
+更新记录见 [`changelog.md`](./changelog.md)。导入后若说明有变化会弹出更新说明。
 
 ## 技术要点
 
-- 数据层：`lib/surgeApi.ts` 封装全部 Surge HTTP 端点；`lib/store.ts` 订阅式全局 store。实时速率独立 1Hz 轮询 `/v1/traffic`（内存中保留 60 点）；内存/引擎指标按设置间隔拉取 Prometheus，历史存 Storage
-- 图表：SwiftUI Charts；折线用 `interpolationMethod: "monotone"` 避免 Catmull-Rom 过冲到负值；Y 轴 `chartYScale` 从 0 起；多序列用单 `LineChart` + `foregroundStyleBy`
-- 首页适配：`home_screen_default_ui.tsx` 入口，首页模式用顶部分段选择器 + 左右滑动翻页；保留 Scripting 浮层底栏（内容铺到屏幕底，不把页面顶上去）；全屏底栏已标明当前 Tab，内容区不再重复页名
-- 不做：Mac 设备管理、配置切换、系统代理；MITM CA / `/v1/environment`
+- 数据层：`lib/surgeApi.ts` 无状态封装 HTTP API；`lib/instances.ts` 多实例与迁移；`lib/store.ts` 当前实例的 metrics / 1Hz traffic
+- 实时速率：`/v1/traffic` 1Hz、内存 60 点；折线 `monotone`、Y 轴从 0
+- 首页：顶部分段 + 翻页；Scripting 浮层底栏可见，内容铺到屏幕底
+- 不做：Mac 设备管理、Surge 配置档切换、系统代理 / Enhanced Mode、MITM CA 下载
 
 ## License
 

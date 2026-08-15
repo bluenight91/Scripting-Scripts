@@ -30,9 +30,9 @@ import {
   type PolicyBenchmarkResult,
   type PolicyOption,
 } from "../lib/surgeApi"
-import { HomeTitleWrapper } from "../components/HomeTitleWrapper"
 import { formatDelay } from "../lib/metrics"
 import { useStore } from "../lib/store"
+import { useTabAutoRefresh } from "../lib/liveCache"
 import { connectErrorText } from "../lib/ui"
 
 export function PoliciesView() {
@@ -79,16 +79,13 @@ export function PoliciesView() {
     }
   }
 
-  useEffect(() => {
-    load()
-  }, [state.config])
+  useTabAutoRefresh(1, load)
 
   const names = groups ? (groupOrder.length ? groupOrder : Object.keys(groups)) : []
   const q = query.trim().toLowerCase()
   const filtered = q ? names.filter((n) => n.toLowerCase().includes(q)) : names
 
   return (
-    <HomeTitleWrapper title="策略">
     <List
       navigationTitle={Script.env === "home_screen" ? undefined : "策略"}
       refreshable={async () => { await load() }}
@@ -145,7 +142,43 @@ export function PoliciesView() {
         </Section>
       ) : null}
     </List>
-    </HomeTitleWrapper>
+  )
+}
+
+function NestedGroupLoader({ name }: { name: string }) {
+  const state = useStore()
+  const [options, setOptions] = useState<PolicyOption[] | null>(null)
+  const [selection, setSelection] = useState<string | null>(null)
+
+  useEffect(() => {
+    getPolicyGroups(state.config)
+      .then((g) => setOptions(g[name] ?? []))
+      .catch(() => setOptions([]))
+    getPolicyGroupSelection(state.config, name)
+      .then((r) => setSelection(r.policy))
+      .catch(() => setSelection(null))
+  }, [state.config, name])
+
+  if (!options) {
+    return (
+      <List navigationTitle={name}>
+        <Section>
+          <Text foregroundStyle="secondaryLabel">加载中…</Text>
+        </Section>
+      </List>
+    )
+  }
+  return (
+    <GroupDetailView
+      groupName={name}
+      options={options}
+      initialSelection={selection}
+      onChanged={() => {
+        getPolicyGroupSelection(state.config, name)
+          .then((r) => setSelection(r.policy))
+          .catch(() => {})
+      }}
+    />
   )
 }
 
@@ -391,6 +424,9 @@ export function GroupDetailView({
               ) : null}
               {isSelected ? (
                 <Image systemName="checkmark.circle.fill" foregroundStyle="systemBlue" font={18} />
+              ) : null}
+              {o.isGroup ? (
+                <NavigationLink title="子组" destination={<NestedGroupLoader name={o.name} />} />
               ) : null}
             </HStack>
           )

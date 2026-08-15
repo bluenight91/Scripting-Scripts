@@ -5,12 +5,12 @@ import {
   Image,
   List,
   NavigationLink,
+  Picker,
   Script,
   Section,
   Spacer,
   Text,
   TextField,
-  useEffect,
   useState,
   VStack,
 } from "scripting"
@@ -28,7 +28,7 @@ import {
 } from "../lib/surgeApi"
 import { formatBytes, formatEventTime, formatRequestClock, formatRequestDateTime, formatSpeed, surgeTimestampToMs } from "../lib/metrics"
 import { useStore } from "../lib/store"
-import { HomeTitleWrapper } from "../components/HomeTitleWrapper"
+import { useTabAutoRefresh } from "../lib/liveCache"
 import { RequestsSegmentBar } from "../components/RequestsSegmentBar"
 import { connectErrorText } from "../lib/ui"
 import { RulesView } from "./RulesView"
@@ -37,25 +37,37 @@ export function NetworkView() {
   const state = useStore()
   const segment = state.requestsSegment
 
-  return (
-    <HomeTitleWrapper title="请求">
-      {segment === "active" ? (
-        <ActiveConnectionsView />
-      ) : segment === "recent" ? (
-        <RecentRequestsView />
-      ) : segment === "events" ? (
-        <EventsView />
-      ) : segment === "dns" ? (
-        <DnsView />
-      ) : (
-        <RulesView />
-      )}
-    </HomeTitleWrapper>
-  )
+  if (segment === "active") return <ActiveConnectionsView />
+  if (segment === "recent") return <RecentRequestsView />
+  if (segment === "events") return <EventsView />
+  if (segment === "dns") return <DnsView />
+  return <RulesView />
 }
 
 function listTitle(title: string): string | undefined {
   return Script.env === "home_screen" ? undefined : title
+}
+
+function filterRequests(list: SurgeRequest[], query: string): SurgeRequest[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return list
+  return list.filter((r) => {
+    const hay = `${r.URL} ${r.remoteHost ?? ""} ${r.policyName} ${r.rule ?? ""} ${r.method ?? ""}`.toLowerCase()
+    return hay.includes(q)
+  })
+}
+
+function sortRequests(list: SurgeRequest[], sort: string, active?: boolean): SurgeRequest[] {
+  const out = list.slice()
+  if (sort === "url") {
+    out.sort((a, b) => (a.remoteHost ?? a.URL).localeCompare(b.remoteHost ?? b.URL))
+  } else if (sort === "size") {
+    out.sort((a, b) => ((b.inBytes ?? 0) + (b.outBytes ?? 0)) - ((a.inBytes ?? 0) + (a.outBytes ?? 0)))
+  } else {
+    const t = (r: SurgeRequest) => (active ? r.startDate : (r.completedDate ?? r.startDate)) ?? 0
+    out.sort((a, b) => t(b) - t(a))
+  }
+  return out
 }
 
 // ---------- 活动连接 ----------
@@ -64,6 +76,8 @@ function ActiveConnectionsView() {
   const state = useStore()
   const [requests, setRequests] = useState<SurgeRequest[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [query, setQuery] = useState("")
+  const [sort, setSort] = useState("time")
 
   async function load() {
     try {
@@ -75,9 +89,9 @@ function ActiveConnectionsView() {
     }
   }
 
-  useEffect(() => {
-    load()
-  }, [state.config])
+  useTabAutoRefresh(3, load)
+
+  const shown = requests ? sortRequests(filterRequests(requests, query), sort, true) : null
 
   return (
     <List
@@ -88,22 +102,30 @@ function ActiveConnectionsView() {
       <Section>
         <RequestsSegmentBar />
       </Section>
+      <Section>
+        <TextField title="搜索" value={query} onChanged={setQuery} prompt="URL / 主机 / 策略" />
+        <Picker title="排序" value={sort} onChanged={setSort}>
+          <Text tag="time">时间</Text>
+          <Text tag="url">主机</Text>
+          <Text tag="size">流量</Text>
+        </Picker>
+      </Section>
       {error ? (
         <Section>
           <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
         </Section>
       ) : null}
-      {requests === null ? (
+      {shown === null ? (
         <Section>
           <Text foregroundStyle="secondaryLabel">加载中…</Text>
         </Section>
-      ) : requests.length === 0 ? (
+      ) : shown.length === 0 ? (
         <Section>
-          <Text foregroundStyle="secondaryLabel">当前没有活动连接</Text>
+          <Text foregroundStyle="secondaryLabel">{query ? "无匹配连接" : "当前没有活动连接"}</Text>
         </Section>
       ) : (
         <Section footer={<Text font={12}>点按查看详情，详情页可终止连接；下拉可刷新</Text>}>
-          {requests.map((r) => (
+          {shown.map((r) => (
             <NavigationLink key={r.id} destination={<RequestDetailView r={r} active onKilled={load} />}>
               <RequestRow r={r} active />
             </NavigationLink>
@@ -120,6 +142,8 @@ function RecentRequestsView() {
   const state = useStore()
   const [requests, setRequests] = useState<SurgeRequest[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [query, setQuery] = useState("")
+  const [sort, setSort] = useState("time")
 
   async function load() {
     try {
@@ -131,9 +155,9 @@ function RecentRequestsView() {
     }
   }
 
-  useEffect(() => {
-    load()
-  }, [state.config])
+  useTabAutoRefresh(3, load)
+
+  const shown = requests ? sortRequests(filterRequests(requests, query), sort) : null
 
   return (
     <List
@@ -144,22 +168,30 @@ function RecentRequestsView() {
       <Section>
         <RequestsSegmentBar />
       </Section>
+      <Section>
+        <TextField title="搜索" value={query} onChanged={setQuery} prompt="URL / 主机 / 策略" />
+        <Picker title="排序" value={sort} onChanged={setSort}>
+          <Text tag="time">时间</Text>
+          <Text tag="url">主机</Text>
+          <Text tag="size">流量</Text>
+        </Picker>
+      </Section>
       {error ? (
         <Section>
           <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
         </Section>
       ) : null}
-      {requests === null ? (
+      {shown === null ? (
         <Section>
           <Text foregroundStyle="secondaryLabel">加载中…</Text>
         </Section>
-      ) : requests.length === 0 ? (
+      ) : shown.length === 0 ? (
         <Section>
-          <Text foregroundStyle="secondaryLabel">暂无最近请求</Text>
+          <Text foregroundStyle="secondaryLabel">{query ? "无匹配请求" : "暂无最近请求"}</Text>
         </Section>
       ) : (
         <Section>
-          {requests.map((r) => (
+          {shown.map((r) => (
             <NavigationLink key={r.id} destination={<RequestDetailView r={r} />}>
               <RequestRow r={r} />
             </NavigationLink>
@@ -343,9 +375,7 @@ function EventsView() {
     }
   }
 
-  useEffect(() => {
-    load()
-  }, [state.config])
+  useTabAutoRefresh(3, load)
 
   return (
     <List
@@ -392,12 +422,14 @@ function EventsView() {
 function DnsView() {
   const state = useStore()
   const [cache, setCache] = useState<DnsEntry[] | null>(null)
+  const [local, setLocal] = useState<DnsEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showFlush, setShowFlush] = useState(false)
   const [flushed, setFlushed] = useState(false)
   const [testDomain, setTestDomain] = useState("www.apple.com")
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
+  const [query, setQuery] = useState("")
 
   async function runDnsTest() {
     const domain = testDomain.trim()
@@ -417,7 +449,8 @@ function DnsView() {
   async function load() {
     try {
       const r = await getDns(state.config)
-      setCache(r.dnsCache)
+      setCache(r.dnsCache ?? [])
+      setLocal(r.local ?? [])
       setError(null)
       setFlushed(false)
     } catch (e) {
@@ -425,9 +458,7 @@ function DnsView() {
     }
   }
 
-  useEffect(() => {
-    load()
-  }, [state.config])
+  useTabAutoRefresh(3, load)
 
   async function doFlush() {
     try {
@@ -454,6 +485,9 @@ function DnsView() {
       <Section>
         <RequestsSegmentBar />
       </Section>
+      <Section>
+        <TextField title="搜索" value={query} onChanged={setQuery} prompt="域名" />
+      </Section>
       <Section
         header={<Text>DNS 延迟测试</Text>}
         footer={testResult ? <Text font={12}>{testResult}</Text> : undefined}
@@ -479,28 +513,51 @@ function DnsView() {
         <Section>
           <Text foregroundStyle="secondaryLabel">加载中…</Text>
         </Section>
-      ) : (
-        <Section
-          header={<Text>{`${cache.length} 条缓存`}</Text>}
-          footer={<Text font={12}>点按条目查看解析结果、CNAME 链路与查询日志；条数为 Surge 当前缓存量（上限约 200，满了会逐出最旧条目）</Text>}
-        >
-          {cache.map((e, i) => (
-            <NavigationLink key={`${e.domain}-${i}`} destination={<DnsDetailView e={e} />}>
-              <VStack alignment="leading" spacing={2}>
-                <Text font={14} lineLimit={1} minScaleFactor={0.7}>{e.domain}</Text>
-                <Text font={11} foregroundStyle="secondaryLabel" lineLimit={1}>
-                  {`${e.data?.join("、") ?? "—"} · ${e.server ?? ""}`}
-                </Text>
-              </VStack>
+      ) : local && local.length > 0 ? (
+        <Section header={<Text>{`静态 Host ${filterDns(local, query).length}`}</Text>}>
+          {filterDns(local, query).map((e, i) => (
+            <NavigationLink key={`local-${e.domain}-${i}`} destination={<DnsDetailView e={e} />}>
+              <DnsRow e={e} />
             </NavigationLink>
           ))}
+        </Section>
+      ) : null}
+      {cache === null ? null : (
+        <Section
+          header={<Text>{`${filterDns(cache, query).length} 条动态缓存`}</Text>}
+          footer={<Text font={12}>点按条目查看解析结果、CNAME 链路与查询日志。静态 Host 来自配置 [Host]，动态缓存有上限约 200。</Text>}
+        >
+          {filterDns(cache, query).length === 0 ? (
+            <Text foregroundStyle="secondaryLabel">{query ? "无匹配缓存" : "暂无缓存"}</Text>
+          ) : (
+            filterDns(cache, query).map((e, i) => (
+              <NavigationLink key={`cache-${e.domain}-${i}`} destination={<DnsDetailView e={e} />}>
+                <DnsRow e={e} />
+              </NavigationLink>
+            ))
+          )}
         </Section>
       )}
     </List>
   )
 }
 
-// ---------- DNS 缓存详情 ----------
+function filterDns(list: DnsEntry[], query: string): DnsEntry[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return list
+  return list.filter((e) => e.domain.toLowerCase().includes(q) || (e.data ?? []).some((d) => d.toLowerCase().includes(q)))
+}
+
+function DnsRow({ e }: { e: DnsEntry }) {
+  return (
+    <VStack alignment="leading" spacing={2}>
+      <Text font={14} lineLimit={1} minScaleFactor={0.7}>{e.domain}</Text>
+      <Text font={11} foregroundStyle="secondaryLabel" lineLimit={1}>
+        {`${e.data?.join("、") ?? "—"} · ${e.server ?? e.comment ?? ""}`}
+      </Text>
+    </VStack>
+  )
+}
 
 function DnsDetailView({ e }: { e: DnsEntry }) {
   const expireText = (() => {

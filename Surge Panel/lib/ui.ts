@@ -19,7 +19,7 @@ export function cardBackground() {
   }
 }
 
-export const CONNECT_HINT = "请到「设置」检查地址与 Key"
+export const CONNECT_HINT = "请到「设置 → 实例」检查地址与 Key"
 
 export function connectErrorText(error: string, prefix = "连接错误"): string {
   return `${prefix}：${error}（${CONNECT_HINT}）`
