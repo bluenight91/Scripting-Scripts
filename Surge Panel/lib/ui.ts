@@ -20,6 +20,7 @@ export function cardBackground() {
 }
 
 export const CONNECT_HINT = "请到「设置 → 实例」检查地址与 Key"
+export const METRICS_HINT = "内存与封禁需 Surge iOS 5.22+ 或 Mac 6.9+（商店版 / Mac 6.8 尚无 /metrics）"
 
 export function connectErrorText(error: string, prefix = "连接错误"): string {
   return `${prefix}：${error}（${CONNECT_HINT}）`

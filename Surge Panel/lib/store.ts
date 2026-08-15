@@ -1,7 +1,7 @@
 // 当前实例的指标、流量、轮询；实例列表见 instances.ts
 import { useEffect, useState } from "scripting"
 import {
-  fetchMetrics,
+  fetchOverviewSamples,
   getRecentRequests,
   getTraffic,
   type SurgeConfig,
@@ -57,6 +57,8 @@ export type StoreState = {
   history: HistoryPoint[]
   speedHistory: SpeedPoint[]
   traffic: TrafficSnapshot | null
+  /** null=未知；true=有 /metrics；false=商店版等无该端点，总览走 HTTP API 回退 */
+  metricsAvailable: boolean | null
   requestsSegment: RequestsSegment
   visibleTab: number
 }
@@ -114,6 +116,7 @@ let state: StoreState = {
   history: bootHistory,
   speedHistory: emptySpeedHistory(),
   traffic: null,
+  metricsAvailable: null,
   requestsSegment: "active",
   visibleTab: 0,
 }
@@ -152,6 +155,7 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
       error: null,
       running: false,
       updatedAt: null,
+      metricsAvailable: null,
       ...extra,
     })
     return
@@ -174,6 +178,7 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
     error: null,
     running: false,
     updatedAt: null,
+    metricsAvailable: null,
     ...extra,
   })
 }
@@ -365,15 +370,21 @@ function armTraffic(delay: number) {
 
 async function tick() {
   if (needsSetup()) return
-  const { config, prefs, samples: prev, history, speeds, activeId } = state
+  const { config, prefs, samples: prev, history, speeds, activeId, metricsAvailable, traffic } = state
   const now = Date.now()
   try {
-    const samples = await fetchMetrics(config)
-    const mem = gaugeValue(samples, "surge_memory_bytes") ?? 0
-    const point: HistoryPoint = { t: now, mem, inSpeed: speeds.inSpeed, outSpeed: speeds.outSpeed }
-    const newHistory = [...history, point]
-    while (newHistory.length > prefs.maxPoints) newHistory.shift()
-    writeHistory(activeId, newHistory)
+    const { samples, fromMetrics } = await fetchOverviewSamples(config, {
+      skipMetrics: metricsAvailable === false,
+      traffic,
+    })
+    const mem = fromMetrics ? gaugeValue(samples, "surge_memory_bytes") : null
+    let newHistory = history
+    if (mem !== null) {
+      const point: HistoryPoint = { t: now, mem, inSpeed: speeds.inSpeed, outSpeed: speeds.outSpeed }
+      newHistory = [...history, point]
+      while (newHistory.length > prefs.maxPoints) newHistory.shift()
+      writeHistory(activeId, newHistory)
+    }
     patch({
       samples,
       prevSamples: prev ?? null,
@@ -381,6 +392,7 @@ async function tick() {
       error: null,
       running: true,
       history: newHistory,
+      metricsAvailable: fromMetrics,
     })
   } catch (e) {
     patch({
@@ -442,6 +454,7 @@ export function stopPolling() {
 
 export async function refreshNow() {
   if (needsSetup()) return
+  if (state.metricsAvailable === false) patch({ metricsAvailable: null })
   await Promise.all([tick(), tickTraffic()])
 }
 

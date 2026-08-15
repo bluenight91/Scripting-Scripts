@@ -11,7 +11,7 @@ Surge HTTP API + Prometheus 监控面板。五个 Tab：总览、策略、流量
 - [下载](./Surge%20Panel.scripting)
 - 更新说明：[changelog.md](./Surge%20Panel/changelog.md)
 
-使用前在 Surge 开启 HTTP API（`http-api` + `http-api-key`）与 Prometheus Metrics。导入后先添加实例并填写 Key，不会在未配置时自动连接。本机默认 http；若用 https（`http-api-tls`），面板会跳过 MITM 自签证书的系统校验。
+使用前在 Surge 开启 HTTP API（`http-api` + `http-api-key`）。导入后先添加实例并填写 Key，不会在未配置时自动连接。本机默认 http；若用 https（`http-api-tls`），面板会跳过 MITM 自签证书的系统校验。`/metrics` 仅 iOS 5.22+ / Mac 6.9+；商店版与 Mac 6.8 没有该端点，面板会改用其它 HTTP API，内存图表不可用。
 
 # 感谢
 

@@ -126,6 +126,15 @@ export function surgeTimestampToMs(ts: number): number {
   return ts < 1e12 ? ts * 1000 : ts
 }
 
+/** /v1/traffic.startTime → 引擎已运行秒数。epoch 秒/毫秒，或较短的时长值。 */
+export function uptimeSecondsFromStartTime(startTime: number, now = Date.now()): number | null {
+  if (!Number.isFinite(startTime) || startTime <= 0) return null
+  if (startTime >= 1e12) return Math.max(0, (now - startTime) / 1000)
+  if (startTime >= 1e9) return Math.max(0, (now - startTime * 1000) / 1000)
+  if (startTime >= 1e7) return startTime / 1000
+  return startTime
+}
+
 export function formatRequestDateTime(ts?: number | null): string {
   if (ts == null) return "—"
   const ms = surgeTimestampToMs(ts)

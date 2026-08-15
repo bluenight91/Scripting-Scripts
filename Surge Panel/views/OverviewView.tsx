@@ -29,7 +29,7 @@ import {
   formatUptime,
   gaugeValue,
 } from "../lib/metrics"
-import { connectErrorText, UI, cardBackground } from "../lib/ui"
+import { connectErrorText, METRICS_HINT, UI, cardBackground } from "../lib/ui"
 import { MemoryDiagView } from "./MemoryDiagView"
 
 /** 图表降采样到最多 n 个点 */
@@ -71,8 +71,9 @@ export function OverviewView() {
   const uptime = state.samples ? gaugeValue(state.samples, "surge_uptime_seconds") : null
   const active = state.samples ? gaugeValue(state.samples, "surge_active_requests") : null
   const dns = state.samples ? gaugeValue(state.samples, "surge_dns_cache_entries") : null
-  const bans = state.samples ? gaugeValue(state.samples, "surge_active_bans") : null
-  const info = state.samples ? buildInfo(state.samples) : null
+  const bans = state.metricsAvailable === false ? null : state.samples ? gaugeValue(state.samples, "surge_active_bans") : null
+  const info = state.metricsAvailable === false ? null : state.samples ? buildInfo(state.samples) : null
+  const noMetrics = state.metricsAvailable === false
   const peakIn = state.peakSpeeds.inSpeed
   const peakOut = state.peakSpeeds.outSpeed
   const memParts = mem !== null ? formatBytesParts(mem) : null
@@ -262,6 +263,10 @@ export function OverviewView() {
           </PanelCard>
         ) : null}
 
+        {!setup && noMetrics ? (
+          <Text font={13} foregroundStyle="secondaryLabel">{METRICS_HINT}</Text>
+        ) : null}
+
         {!setup && state.error ? (
           <Text font={13} foregroundStyle="systemRed">
             {connectErrorText(state.error)}
@@ -292,7 +297,7 @@ export function OverviewView() {
               title="内存"
               value={memParts ? memParts.value : "—"}
               unit={memParts?.unit}
-              subtitle="点按查看诊断"
+              subtitle={noMetrics ? "需 iOS 5.22+ / Mac 6.9+" : "点按查看诊断"}
               onTap={() => setShowDiag(true)}
             />
             <StatCard
@@ -300,7 +305,7 @@ export function OverviewView() {
               iconColor="systemGreen"
               title="运行时长"
               value={uptime !== null ? formatUptime(uptime) : "—"}
-              subtitle={info ? `Surge ${info.version}` : undefined}
+              subtitle={info ? `Surge ${info.version}` : inst.version ? `Surge ${inst.version}` : undefined}
             />
           </HStack>
           <HStack spacing={12}>
@@ -370,9 +375,13 @@ export function OverviewView() {
           <HStack>
             <Text font={UI.titleFont} fontWeight="semibold">内存历史</Text>
             <Spacer />
-            <Text font={UI.captionFont} foregroundStyle="secondaryLabel">{`${state.history.length} 个采样点`}</Text>
+            <Text font={UI.captionFont} foregroundStyle="secondaryLabel">
+              {noMetrics ? "当前版本无 /metrics" : `${state.history.length} 个采样点`}
+            </Text>
           </HStack>
-          {marks.length >= 2 ? (
+          {noMetrics ? (
+            <Text font={13} foregroundStyle="secondaryLabel">{METRICS_HINT}</Text>
+          ) : marks.length >= 2 ? (
             <Chart
               frame={{ height: 150 }}
               chartYScale={{ domain: { from: 0, to: memYMax }, type: "linear" }}

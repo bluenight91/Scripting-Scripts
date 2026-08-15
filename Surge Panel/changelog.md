@@ -3,6 +3,7 @@
 - 首次安装不再自动创建「本机」并立刻连接；总览引导添加实例，避免一进来就报 TLS / 未授权错误
 - HTTPS 请求跳过 Surge MITM 自签证书的系统链校验（鉴权仍靠 X-Key）；默认协议改为 http，对齐 `http-api-tls = false`
 - 添加或保存有效实例后才会开始轮询；未填写 Key 的实例不会去连
+- 商店版 iOS 与 Mac 6.8 没有 `/metrics`：总览不再因此报连接失败。时长 / 活动连接 / DNS 改走 HTTP API；内存与封禁需 iOS 5.22+ 或 Mac 6.9+（TestFlight）
 
 ## 上次更新（2.0.0）
 
