@@ -449,8 +449,8 @@ function DnsView() {
   async function load() {
     try {
       const r = await getDns(state.config)
-      setCache(r.dnsCache ?? [])
-      setLocal(r.local ?? [])
+      setCache(asDnsList(r.dnsCache))
+      setLocal(asDnsList(r.local))
       setError(null)
       setFlushed(false)
     } catch (e) {
@@ -542,24 +542,52 @@ function DnsView() {
   )
 }
 
+function asStringList(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((x) => String(x)).filter((s) => s.length > 0)
+  if (typeof v === "string" && v.length > 0) return [v]
+  return []
+}
+
+function asDnsList(v: unknown): DnsEntry[] {
+  if (!Array.isArray(v)) return []
+  return v.map((raw) => {
+    const e = raw as DnsEntry
+    const path = (e as { path?: unknown }).path
+    return {
+      ...e,
+      domain: String(e.domain ?? ""),
+      data: asStringList(e.data),
+      logs: asStringList(e.logs),
+      path: Array.isArray(path) ? asStringList(path).join(" → ") : e.path,
+    }
+  })
+}
+
 function filterDns(list: DnsEntry[], query: string): DnsEntry[] {
   const q = query.trim().toLowerCase()
   if (!q) return list
-  return list.filter((e) => e.domain.toLowerCase().includes(q) || (e.data ?? []).some((d) => d.toLowerCase().includes(q)))
+  return list.filter(
+    (e) =>
+      e.domain.toLowerCase().includes(q) ||
+      asStringList(e.data).some((d) => d.toLowerCase().includes(q))
+  )
 }
 
 function DnsRow({ e }: { e: DnsEntry }) {
+  const records = asStringList(e.data)
   return (
     <VStack alignment="leading" spacing={2}>
       <Text font={14} lineLimit={1} minScaleFactor={0.7}>{e.domain}</Text>
       <Text font={11} foregroundStyle="secondaryLabel" lineLimit={1}>
-        {`${e.data?.join("、") ?? "—"} · ${e.server ?? e.comment ?? ""}`}
+        {`${records.length > 0 ? records.join("、") : "—"} · ${e.server ?? e.comment ?? ""}`}
       </Text>
     </VStack>
   )
 }
 
 function DnsDetailView({ e }: { e: DnsEntry }) {
+  const records = asStringList(e.data)
+  const logs = asStringList(e.logs)
   const expireText = (() => {
     if (!e.expiresTime) return null
     const remainMin = Math.max(0, Math.round((surgeTimestampToMs(e.expiresTime) - Date.now()) / 60000))
@@ -570,10 +598,10 @@ function DnsDetailView({ e }: { e: DnsEntry }) {
     <List navigationTitle={e.domain}>
       {/* 解析结果 */}
       <Section header={<Text>解析结果</Text>}>
-        {e.data && e.data.length > 0 ? (
-          e.data.map((ip, i) => (
+        {records.length > 0 ? (
+          records.map((ip, i) => (
             <HStack key={i}>
-              <Text font={14}>{ip}</Text>
+              <Text font={16}>{ip}</Text>
               <Spacer />
             </HStack>
           ))
@@ -601,9 +629,9 @@ function DnsDetailView({ e }: { e: DnsEntry }) {
       ) : null}
 
       {/* 查询日志 */}
-      {e.logs && e.logs.length > 0 ? (
+      {logs.length > 0 ? (
         <Section header={<Text>查询日志</Text>}>
-          {e.logs.map((log, i) => (
+          {logs.map((log, i) => (
             <Text key={i} font={12} lineLimit={4}>{log}</Text>
           ))}
         </Section>
