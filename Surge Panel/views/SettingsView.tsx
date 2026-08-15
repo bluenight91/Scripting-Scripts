@@ -33,7 +33,7 @@ import {
   type FeatureKey,
 } from "../lib/surgeApi"
 import { ChangelogView } from "../components/ReleaseNotesSheet"
-import { clearHistory, savePrefs, useStore } from "../lib/store"
+import { clearHistory, needsSetup, savePrefs, useStore } from "../lib/store"
 import { ScriptsView } from "./ScriptsView"
 import { InstancesView } from "./InstancesView"
 
@@ -63,6 +63,15 @@ export function SettingsView() {
   const [logLevel, setLogLevel] = useState("notify")
 
   async function loadEngineState() {
+    if (needsSetup()) {
+      setOutbound(null)
+      setGlobalPolicy(null)
+      setPolicyChoices([])
+      setFeatures(null)
+      setModules(null)
+      setEngineError(null)
+      return
+    }
     try {
       const [ob, m, f] = await Promise.all([
         getOutboundMode(state.config),
@@ -201,7 +210,7 @@ export function SettingsView() {
       }}
     >
       {/* 实例 */}
-      <Section header={<Text>实例</Text>} footer={<Text font={13}>可添加本机与网关等多个 Surge HTTP API，点按切换。当前：{state.instances.find((i) => i.id === state.activeId)?.name ?? "—"}（{state.config.host}:{state.config.port}）</Text>}>
+      <Section header={<Text>实例</Text>} footer={<Text font={13}>{needsSetup() ? "还没有可连接的实例。先添加本机或网关 HTTP API 并填写 Key。" : `可添加本机与网关等多个 Surge HTTP API，点按切换。当前：${state.instances.find((i) => i.id === state.activeId)?.name ?? "—"}（${state.config.host}:${state.config.port}）`}</Text>}>
         <NavigationLink title="管理实例" destination={<InstancesView />} />
       </Section>
 

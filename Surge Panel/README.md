@@ -17,8 +17,8 @@
    - **一键导入**：[在 Scripting 中打开 Surge Panel](https://www.scripting.fun/import_scripts/?urls=%5B%22https%3A%2F%2Fgithub.com%2Fbluenight91%2FScripting-Scripts%2Ftree%2Fmain%2FSurge%2520Panel%22%5D)
    - 下载仓库根目录的 [`Surge Panel.scripting`](../Surge%20Panel.scripting)，用 Scripting 打开
    - 或将整个 `Surge Panel` 目录放入 Scripting 的脚本目录
-2. 在 Surge 中开启 HTTP API（`http-api = 0.0.0.0:6166` + `http-api-key`）与 Prometheus Metrics Endpoint
-3. 首次运行会生成「本机」实例，在「设置 → 实例」填写 Key；需要监控其它设备时再添加实例
+2. 在 Surge 中开启 HTTP API（`http-api = 0.0.0.0:6166` + `http-api-key`）。`/metrics` 仅 iOS 5.22+ / Mac 6.9+（TestFlight）；商店版与 Mac 6.8 仍可用流量、策略、请求，只是没有内存仪表
+3. 首次打开不会自动连接。到总览或「设置 → 实例」添加本机 / 网关 HTTP API 并填写 Key（本机默认 http；https 会跳过 MITM 自签证书校验）
 4. 可选：Scripting 设置 → Show Home Tab → 选择本脚本
 
 更新记录见 [`changelog.md`](./changelog.md)。导入后若说明有变化会弹出更新说明。

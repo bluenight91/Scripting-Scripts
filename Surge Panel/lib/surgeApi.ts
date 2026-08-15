@@ -1,6 +1,6 @@
 // Surge HTTP API 封装（端点文档：https://manual.nssurge.com/others/http-api.html）
 import { fetch } from "scripting"
-import { parsePrometheus, type MetricSample } from "./metrics"
+import { parsePrometheus, uptimeSecondsFromStartTime, type MetricSample } from "./metrics"
 
 export type SurgeConfig = {
   protocol: "http" | "https"
@@ -10,11 +10,26 @@ export type SurgeConfig = {
 }
 
 export const DEFAULT_CONFIG: SurgeConfig = {
-  protocol: "https",
+  // Surge 默认 http-api-tls = false；HTTPS 用 MITM 自签证书，请求需跳过系统链校验
+  protocol: "http",
   host: "127.0.0.1",
   port: "6166",
-  // 在脚本「设置」页填写你的 Surge HTTP API Key（Surge 配置中的 http-api-key）
   key: "",
+}
+
+/** Surge HTTP API 的 TLS 证书由 MITM CA 签发，系统链校验会失败；鉴权靠 X-Key */
+function allowInsecure(_c: SurgeConfig): boolean {
+  return true
+}
+
+function wrapFetchError(e: unknown): Error {
+  const s = String(e)
+  if (/TLS|TlsHandler|证书|certificate/i.test(s)) {
+    return new Error(
+      `${s}。Surge HTTPS API 使用 MITM 自签证书。可改用 http（默认 http-api-tls = false），或确认 Scripting 已允许本地网络。`
+    )
+  }
+  return e instanceof Error ? e : new Error(s)
 }
 
 function urlOf(c: SurgeConfig, path: string): string {
@@ -37,8 +52,10 @@ async function request<T>(
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
     timeout: 30,
-    allowInsecureRequest: c.protocol === "http",
+    allowInsecureRequest: allowInsecure(c),
     debugLabel: `surge-panel ${method} ${path}`,
+  }).catch((e) => {
+    throw wrapFetchError(e)
   })
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}${res.status === 401 ? "（Key 无效）" : ""}`)
@@ -57,15 +74,22 @@ function post<T>(c: SurgeConfig, path: string, body?: unknown): Promise<T> {
 
 // ---------- Metrics ----------
 
-export async function fetchMetrics(c: SurgeConfig): Promise<MetricSample[]> {
+/** iOS 5.22+ / Mac 6.9+；商店版与 Mac 6.8 返回 404。没有端点时返回 null，不视为连接失败。 */
+export async function fetchMetrics(c: SurgeConfig): Promise<MetricSample[] | null> {
   const res = await fetch(urlOf(c, "/v1/metrics"), {
     headers: { "X-Key": c.key },
     timeout: 15,
-    allowInsecureRequest: c.protocol === "http",
+    allowInsecureRequest: allowInsecure(c),
     debugLabel: "surge-panel metrics",
+  }).catch((e) => {
+    throw wrapFetchError(e)
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return parsePrometheus(await res.text())
+  if (res.status === 404 || res.status === 405 || res.status === 501) return null
+  if (!res.ok) throw new Error(`HTTP ${res.status}${res.status === 401 ? "（Key 无效）" : ""}`)
+  const text = (await res.text()).trim()
+  if (!text || text.startsWith("{") || text.startsWith("[")) return null
+  const samples = parsePrometheus(text)
+  return samples.length > 0 ? samples : null
 }
 
 // ---------- 类型 ----------
@@ -233,8 +257,10 @@ export async function probeOutbound(c: SurgeConfig): Promise<ProbeResult> {
     method: "GET",
     headers: { "X-Key": c.key },
     timeout: 10,
-    allowInsecureRequest: c.protocol === "http",
+    allowInsecureRequest: allowInsecure(c),
     debugLabel: "surge-panel probe",
+  }).catch((e) => {
+    throw wrapFetchError(e)
   })
   const latencyMs = Date.now() - t0
   if (!res.ok) {
@@ -452,6 +478,43 @@ export const flushDns = (c: SurgeConfig) => post<void>(c, "/v1/dns/flush")
 
 export const testDnsDelay = (c: SurgeConfig, domain: string) =>
   post<{ delay: number }>(c, "/v1/test/dns_delay", { domain })
+
+/** 商店版没有 /metrics 时，用 traffic / requests / dns 拼出总览可用的 gauge */
+async function fallbackOverviewSamples(
+  c: SurgeConfig,
+  traffic?: TrafficSnapshot | null
+): Promise<MetricSample[]> {
+  const samples: MetricSample[] = []
+  const snap = traffic ?? (await getTraffic(c).catch(() => null))
+  if (snap) {
+    const uptime = uptimeSecondsFromStartTime(snap.startTime)
+    if (uptime !== null) {
+      samples.push({ name: "surge_uptime_seconds", labels: {}, value: uptime })
+    }
+  }
+  const [active, dns] = await Promise.all([
+    getActiveRequests(c)
+      .then((r) => r.requests?.length ?? 0)
+      .catch(() => null as number | null),
+    getDns(c)
+      .then((r) => r.dnsCache?.length ?? 0)
+      .catch(() => null as number | null),
+  ])
+  if (active !== null) samples.push({ name: "surge_active_requests", labels: {}, value: active })
+  if (dns !== null) samples.push({ name: "surge_dns_cache_entries", labels: {}, value: dns })
+  return samples
+}
+
+export async function fetchOverviewSamples(
+  c: SurgeConfig,
+  opts?: { skipMetrics?: boolean; traffic?: TrafficSnapshot | null }
+): Promise<{ samples: MetricSample[]; fromMetrics: boolean }> {
+  if (!opts?.skipMetrics) {
+    const metrics = await fetchMetrics(c)
+    if (metrics) return { samples: metrics, fromMetrics: true }
+  }
+  return { samples: await fallbackOverviewSamples(c, opts?.traffic), fromMetrics: false }
+}
 
 // ---------- 配置 / 引擎 ----------
 

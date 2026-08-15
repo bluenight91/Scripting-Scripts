@@ -18,7 +18,7 @@ import { PanelCard } from "../components/PanelCard"
 import { analyzeMemoryTrend, openRequestsSegment, useStore } from "../lib/store"
 import { reloadProfile } from "../lib/surgeApi"
 import { formatBytes, gaugeValue } from "../lib/metrics"
-import { UI } from "../lib/ui"
+import { METRICS_HINT, UI } from "../lib/ui"
 import { downsample } from "./OverviewView"
 
 export function MemoryDiagView() {
@@ -60,6 +60,18 @@ export function MemoryDiagView() {
         }}
       >
         <VStack alignment="leading" spacing={UI.pageSpacing} padding={UI.pagePadding}>
+          {state.metricsAvailable === false ? (
+            <PanelCard>
+              <Text font={UI.titleFont} fontWeight="semibold">当前版本没有内存指标</Text>
+              <Text font={13} foregroundStyle="secondaryLabel">{METRICS_HINT}</Text>
+              <Text font={13} foregroundStyle="secondaryLabel">
+                TestFlight 以及即将发布的 iOS 5.22 / Mac 6.9 才有 Prometheus /metrics。流量、策略、请求仍可用。
+              </Text>
+              <Button title="查看事件" systemImage="bell" action={() => openRequestsSegment("events")} />
+            </PanelCard>
+          ) : null}
+          {state.metricsAvailable !== false ? (
+            <>
           <PanelCard>
             <HStack>
               <Text font={UI.titleFont} fontWeight="semibold">内存占用历史</Text>
@@ -135,6 +147,8 @@ export function MemoryDiagView() {
             </HStack>
             {actionMsg ? <Text font={12} foregroundStyle="secondaryLabel">{actionMsg}</Text> : null}
           </PanelCard>
+            </>
+          ) : null}
         </VStack>
       </ScrollView>
     </NavigationStack>

@@ -1,7 +1,7 @@
 // 当前实例的指标、流量、轮询；实例列表见 instances.ts
 import { useEffect, useState } from "scripting"
 import {
-  fetchMetrics,
+  fetchOverviewSamples,
   getRecentRequests,
   getTraffic,
   type SurgeConfig,
@@ -12,9 +12,11 @@ import { gaugeValue, type MetricSample } from "./metrics"
 import {
   findInstance,
   historyKey,
+  instanceIsReady,
   instanceToConfig,
   loadInstanceState,
   persistInstanceState,
+  EMPTY_INSTANCE,
   type SurgeInstance,
 } from "./instances"
 
@@ -55,6 +57,8 @@ export type StoreState = {
   history: HistoryPoint[]
   speedHistory: SpeedPoint[]
   traffic: TrafficSnapshot | null
+  /** null=未知；true=有 /metrics；false=商店版等无该端点，总览走 HTTP API 回退 */
+  metricsAvailable: boolean | null
   requestsSegment: RequestsSegment
   visibleTab: number
 }
@@ -93,8 +97,8 @@ function writeHistory(id: string, history: HistoryPoint[]) {
 }
 
 const boot = loadInstanceState()
-const bootInst = findInstance(boot.instances, boot.activeId) ?? boot.instances[0]
-const bootHistory = readHistory(boot.activeId)
+const bootInst = findInstance(boot.instances, boot.activeId) ?? EMPTY_INSTANCE
+const bootHistory = boot.activeId ? readHistory(boot.activeId) : []
 
 let state: StoreState = {
   instances: boot.instances,
@@ -112,6 +116,7 @@ let state: StoreState = {
   history: bootHistory,
   speedHistory: emptySpeedHistory(),
   traffic: null,
+  metricsAvailable: null,
   requestsSegment: "active",
   visibleTab: 0,
 }
@@ -133,6 +138,28 @@ function patch(partial: Partial<StoreState>) {
 }
 
 function applyActive(instances: SurgeInstance[], activeId: string, extra?: Partial<StoreState>) {
+  if (instances.length === 0) {
+    persistInstanceState([], "")
+    patch({
+      instances: [],
+      activeId: "",
+      config: instanceToConfig(EMPTY_INSTANCE),
+      history: [],
+      speedHistory: emptySpeedHistory(),
+      peakSpeeds: { inSpeed: 0, outSpeed: 0 },
+      samples: null,
+      prevSamples: null,
+      traffic: null,
+      speeds: { inSpeed: 0, outSpeed: 0 },
+      failedRecent: 0,
+      error: null,
+      running: false,
+      updatedAt: null,
+      metricsAvailable: null,
+      ...extra,
+    })
+    return
+  }
   const inst = findInstance(instances, activeId) ?? instances[0]
   persistInstanceState(instances, inst.id)
   const history = readHistory(inst.id)
@@ -151,8 +178,14 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
     error: null,
     running: false,
     updatedAt: null,
+    metricsAvailable: null,
     ...extra,
   })
+}
+
+export function needsSetup(): boolean {
+  const inst = findInstance(state.instances, state.activeId) ?? state.instances[0]
+  return !instanceIsReady(inst)
 }
 
 export function subscribe(fn: () => void): () => void {
@@ -173,7 +206,7 @@ export function useStore(): StoreState {
 }
 
 export function activeInstance(): SurgeInstance {
-  return findInstance(state.instances, state.activeId) ?? state.instances[0]
+  return findInstance(state.instances, state.activeId) ?? state.instances[0] ?? EMPTY_INSTANCE
 }
 
 export function initStore() {
@@ -215,7 +248,7 @@ export function updateInstance(id: string, patchInst: Partial<SurgeInstance>) {
   if (id === state.activeId) {
     const inst = findInstance(instances, id)!
     patch({ instances, config: instanceToConfig(inst) })
-    refreshNow()
+    void connectActive()
   } else {
     patch({ instances })
   }
@@ -227,25 +260,26 @@ export function addInstance(inst: SurgeInstance) {
   patch({ instances })
 }
 
+export async function connectActive() {
+  if (!instanceIsReady(activeInstance())) return
+  if (started) await refreshNow()
+  else await startPolling()
+}
+
 export async function switchInstance(id: string) {
   if (id === state.activeId) return
-  const wasStarted = started
   stopPolling()
   applyActive(state.instances, id)
-  if (wasStarted) await startPolling()
-  else await refreshNow()
+  await connectActive()
 }
 
 export async function deleteInstance(id: string) {
-  if (state.instances.length <= 1) throw new Error("至少保留一个实例")
   const instances = state.instances.filter((i) => i.id !== id)
   Storage.remove(historyKey(id))
-  if (id === state.activeId) {
-    const wasStarted = started
+  if (id === state.activeId || instances.length === 0) {
     stopPolling()
-    applyActive(instances, instances[0].id)
-    if (wasStarted) await startPolling()
-    else await refreshNow()
+    applyActive(instances, instances[0]?.id ?? "")
+    await connectActive()
   } else {
     persistInstanceState(instances, state.activeId)
     patch({ instances })
@@ -290,7 +324,7 @@ function aggregateCurrentSpeeds(entries: Record<string, TrafficEntry>): {
 }
 
 async function tickTraffic() {
-  if (trafficInFlight) return
+  if (needsSetup() || trafficInFlight) return
   trafficInFlight = true
   const t0 = Date.now()
   try {
@@ -335,15 +369,22 @@ function armTraffic(delay: number) {
 }
 
 async function tick() {
-  const { config, prefs, samples: prev, history, speeds, activeId } = state
+  if (needsSetup()) return
+  const { config, prefs, samples: prev, history, speeds, activeId, metricsAvailable, traffic } = state
   const now = Date.now()
   try {
-    const samples = await fetchMetrics(config)
-    const mem = gaugeValue(samples, "surge_memory_bytes") ?? 0
-    const point: HistoryPoint = { t: now, mem, inSpeed: speeds.inSpeed, outSpeed: speeds.outSpeed }
-    const newHistory = [...history, point]
-    while (newHistory.length > prefs.maxPoints) newHistory.shift()
-    writeHistory(activeId, newHistory)
+    const { samples, fromMetrics } = await fetchOverviewSamples(config, {
+      skipMetrics: metricsAvailable === false,
+      traffic,
+    })
+    const mem = fromMetrics ? gaugeValue(samples, "surge_memory_bytes") : null
+    let newHistory = history
+    if (mem !== null) {
+      const point: HistoryPoint = { t: now, mem, inSpeed: speeds.inSpeed, outSpeed: speeds.outSpeed }
+      newHistory = [...history, point]
+      while (newHistory.length > prefs.maxPoints) newHistory.shift()
+      writeHistory(activeId, newHistory)
+    }
     patch({
       samples,
       prevSamples: prev ?? null,
@@ -351,6 +392,7 @@ async function tick() {
       error: null,
       running: true,
       history: newHistory,
+      metricsAvailable: fromMetrics,
     })
   } catch (e) {
     patch({
@@ -398,6 +440,7 @@ function restartPolling() {
 
 export async function startPolling() {
   if (started) return
+  if (needsSetup()) return
   started = true
   await Promise.all([tick(), tickTraffic()])
   scheduleNext()
@@ -410,6 +453,8 @@ export function stopPolling() {
 }
 
 export async function refreshNow() {
+  if (needsSetup()) return
+  if (state.metricsAvailable === false) patch({ metricsAvailable: null })
   await Promise.all([tick(), tickTraffic()])
 }
 
