@@ -202,8 +202,61 @@ export const testPolicies = (c: SurgeConfig, names: string[], url?: string) =>
 
 // ---------- 出站模式 ----------
 
+export type OutboundMode = "rule" | "proxy" | "direct"
+
 export const getOutboundMode = (c: SurgeConfig) =>
-  get<{ mode: "rule" | "proxy" | "direct" }>(c, "/v1/outbound")
+  get<{ mode: OutboundMode }>(c, "/v1/outbound")
+
+export type ProbeResult = {
+  mode?: OutboundMode
+  deviceName?: string
+  version?: string
+  build?: string
+  latencyMs: number
+}
+
+function headerGet(headers: unknown, name: string): string | undefined {
+  if (!headers) return undefined
+  const h = headers as { get?: (k: string) => string | null; [k: string]: unknown }
+  if (typeof h.get === "function") {
+    const v = h.get(name) ?? h.get(name.toLowerCase())
+    return v ?? undefined
+  }
+  const v = h[name] ?? h[name.toLowerCase()]
+  return typeof v === "string" ? v : undefined
+}
+
+/** 连通性探针：读 /v1/outbound，尽量带上版本头 */
+export async function probeOutbound(c: SurgeConfig): Promise<ProbeResult> {
+  const t0 = Date.now()
+  const res = await fetch(urlOf(c, "/v1/outbound"), {
+    method: "GET",
+    headers: { "X-Key": c.key },
+    timeout: 10,
+    allowInsecureRequest: c.protocol === "http",
+    debugLabel: "surge-panel probe",
+  })
+  const latencyMs = Date.now() - t0
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}${res.status === 401 ? "（Key 无效）" : ""}`)
+  }
+  let mode: OutboundMode | undefined
+  try {
+    const body = (await res.json()) as { mode?: OutboundMode }
+    mode = body?.mode
+  } catch {
+    // 部分环境只关心连通
+  }
+  return {
+    mode,
+    version: headerGet(res.headers, "x-surge-version"),
+    build: headerGet(res.headers, "x-surge-build"),
+    latencyMs,
+  }
+}
+
+export const getEnvironment = (c: SurgeConfig) =>
+  get<{ deviceName?: string }>(c, "/v1/environment")
 
 export const setOutboundMode = (c: SurgeConfig, mode: string) =>
   post<void>(c, "/v1/outbound", { mode })
@@ -255,6 +308,18 @@ export const getScripts = (c: SurgeConfig) =>
 export const runCronScript = (c: SurgeConfig, scriptName: string) =>
   post<unknown>(c, "/v1/scripting/cron/evaluate", { script_name: scriptName })
 
+export const evaluateScript = (
+  c: SurgeConfig,
+  scriptText: string,
+  mockType = "cron",
+  timeout = 5
+) =>
+  post<unknown>(c, "/v1/scripting/evaluate", {
+    script_text: scriptText,
+    mock_type: mockType,
+    timeout,
+  })
+
 // ---------- 策略详情 ----------
 
 export const getPolicyDetail = (c: SurgeConfig, policyName: string) =>
@@ -268,8 +333,8 @@ export const getPolicyDetail = (c: SurgeConfig, policyName: string) =>
 export const setLogLevel = (c: SurgeConfig, level: string) =>
   post<void>(c, "/v1/log/level", { level })
 
-export const getCurrentProfile = (c: SurgeConfig) =>
-  get<{ profile?: string } | string>(c, "/v1/profiles/current?sensitive=0")
+export const getCurrentProfile = (c: SurgeConfig, sensitive = false) =>
+  get<{ profile?: string } | string>(c, `/v1/profiles/current?sensitive=${sensitive ? 1 : 0}`)
 
 export type ProfileLine =
   | { kind: "kv"; key: string; value: string }
@@ -358,6 +423,13 @@ export function orderPolicyGroupNames(names: string[], profileOrder: string[]): 
 // ---------- 功能开关 / 模块 ----------
 
 export type FeatureKey = "mitm" | "capture" | "rewrite" | "scripting"
+
+export const FEATURE_LABELS: Record<FeatureKey, string> = {
+  mitm: "MitM",
+  capture: "捕获",
+  rewrite: "重写",
+  scripting: "脚本",
+}
 
 export const getFeature = (c: SurgeConfig, f: FeatureKey) =>
   get<{ enabled: boolean }>(c, `/v1/features/${f}`)

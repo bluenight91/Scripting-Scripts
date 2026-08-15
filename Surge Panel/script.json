@@ -2,7 +2,7 @@
   "intentInputTypes" : [
 
   ],
-  "version" : "1.3.1",
+  "version" : "2.0.0",
   "iconImage" : "",
   "icon" : "gauge.with.needle.fill",
   "author" : {
@@ -21,9 +21,9 @@
   },
   "color" : "rgba(28, 140, 255, 1)",
   "localizedDescriptions" : {
-    "zh" : "Surge 监控面板：运行态仪表、策略组、流量排行、请求工作台与引擎设置（基于 Surge HTTP API）。"
+    "zh" : "Surge 监控面板 2.0：多实例切换、运行态仪表、策略组、流量、请求工作台与引擎设置。"
   },
   "name" : "Surge Panel",
   "runInApp" : false,
-  "description" : "Surge monitoring panel: overview, policy groups, traffic ranking, requests workspace and engine settings via Surge HTTP API."
+  "description" : "Surge monitoring panel 2.0: multi-instance switching, overview, policies, traffic, requests workspace and engine settings via Surge HTTP API."
 }

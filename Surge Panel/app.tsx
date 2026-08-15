@@ -15,7 +15,7 @@ import {
   useObservable,
   VStack,
 } from "scripting"
-import { startPolling, stopPolling, registerTabJump } from "./lib/store"
+import { startPolling, stopPolling, registerTabJump, setVisibleTab } from "./lib/store"
 import { useMarkdownReleaseNotesSheet } from "./components/ReleaseNotesSheet"
 import { OverviewView } from "./views/OverviewView"
 import { PoliciesView } from "./views/PoliciesView"
@@ -42,6 +42,10 @@ export function SurgePanelApp() {
   }, [])
 
   useEffect(() => registerTabJump((i) => selection.setValue(i)), [])
+
+  useEffect(() => {
+    setVisibleTab(selection.value)
+  }, [selection.value])
 
   // ---------- 首页 Tab：顶部分段器 + 左右滑动翻页 ----------
   // Scripting 底栏是浮层：保留可见，同时忽略 container 底部安全区，让内容铺到屏幕底（对齐 CAIS）

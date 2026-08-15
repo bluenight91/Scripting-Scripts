@@ -8,13 +8,13 @@ import {
   Spacer,
   Text,
   TextField,
-  useEffect,
   useState,
   VStack,
   type Color,
 } from "scripting"
 import { getRules } from "../lib/surgeApi"
 import { useStore } from "../lib/store"
+import { useTabAutoRefresh } from "../lib/liveCache"
 import { connectErrorText } from "../lib/ui"
 import { RequestsSegmentBar } from "../components/RequestsSegmentBar"
 
@@ -77,9 +77,7 @@ export function RulesView() {
     }
   }
 
-  useEffect(() => {
-    load()
-  }, [state.config])
+  useTabAutoRefresh(3, load)
 
   const types = rules ? [...new Set(rules.map((r) => r.type))].sort() : []
 

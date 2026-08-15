@@ -2,14 +2,15 @@
 import {
   HStack,
   Image,
+  Picker,
   ScrollView,
   Spacer,
   Text,
+  useState,
   VStack,
   type Color,
 } from "scripting"
 import { GradientBar } from "../components/GradientBar"
-import { HomeTitleWrapper } from "../components/HomeTitleWrapper"
 import { PanelCard } from "../components/PanelCard"
 import { StatCard } from "../components/StatCard"
 import { refreshNow, useStore } from "../lib/store"
@@ -27,27 +28,27 @@ const BAR_COLORS: [Color, Color][] = [
 
 function sortedEntries(
   rec: Record<string, TrafficEntry> | undefined,
-  by: "current" | "total"
+  by: "current" | "total" | "peak"
 ): [string, TrafficEntry][] {
   if (!rec) return []
   return Object.entries(rec).sort((a, b) => {
-    const av =
+    const score = (e: TrafficEntry) =>
       by === "current"
-        ? a[1].inCurrentSpeed + a[1].outCurrentSpeed
-        : a[1].in + a[1].out
-    const bv =
-      by === "current"
-        ? b[1].inCurrentSpeed + b[1].outCurrentSpeed
-        : b[1].in + b[1].out
-    return bv - av
+        ? e.inCurrentSpeed + e.outCurrentSpeed
+        : by === "peak"
+          ? e.inMaxSpeed + e.outMaxSpeed
+          : e.in + e.out
+    return score(b[1]) - score(a[1])
   })
 }
 
 export function TrafficView() {
   const state = useStore()
+  const [sortBy, setSortBy] = useState<"current" | "total" | "peak">("current")
 
-  const interfaces = sortedEntries(state.traffic?.interface, "current")
-  const activeNodes = sortedEntries(state.traffic?.connector, "current").filter(
+  const interfaces = sortedEntries(state.traffic?.interface, sortBy)
+  const connectors = sortedEntries(state.traffic?.connector, sortBy)
+  const activeNodes = connectors.filter(
     ([, v]) => v.inCurrentSpeed + v.outCurrentSpeed > 0
   )
   const ranked = sortedEntries(state.traffic?.connector, "total")
@@ -60,7 +61,6 @@ export function TrafficView() {
   const upParts = state.running ? formatSpeedParts(state.speeds.outSpeed) : null
 
   return (
-    <HomeTitleWrapper title="流量">
     <ScrollView axes="vertical" refreshable={async () => { await refreshNow() }}>
       <VStack alignment="leading" spacing={UI.pageSpacing} padding={UI.pagePadding}>
         {/* 实时合计 */}
@@ -83,6 +83,12 @@ export function TrafficView() {
           />
         </HStack>
 
+        <Picker title="明细排序" pickerStyle="segmented" value={sortBy} onChanged={(v: string) => setSortBy(v as "current" | "total" | "peak")}>
+          <Text tag="current">实时</Text>
+          <Text tag="total">累计</Text>
+          <Text tag="peak">峰值</Text>
+        </Picker>
+
         {/* 网卡 */}
         <PanelCard spacing={12}>
           <HStack>
@@ -100,7 +106,7 @@ export function TrafficView() {
                 <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
                   <Text font={15} lineLimit={1} minScaleFactor={0.7}>{name}</Text>
                   <Text font={UI.captionFont} foregroundStyle="secondaryLabel">
-                    {`累计 ↓${formatBytes(v.in)}  ↑${formatBytes(v.out)}`}
+                    {`累计 ↓${formatBytes(v.in)}  ↑${formatBytes(v.out)} · 峰值 ↓${formatSpeed(v.inMaxSpeed)} ↑${formatSpeed(v.outMaxSpeed)}`}
                   </Text>
                 </VStack>
                 <HStack spacing={4}>
@@ -133,14 +139,13 @@ export function TrafficView() {
                 <Text font={15} lineLimit={1} minScaleFactor={0.7} frame={{ maxWidth: "infinity", alignment: "leading" }}>
                   {name}
                 </Text>
-                <HStack spacing={4}>
-                  <Image systemName="arrow.down" font={10} foregroundStyle="systemBlue" />
-                  <Text font={13}>{formatSpeed(v.inCurrentSpeed)}</Text>
-                </HStack>
-                <HStack spacing={4}>
-                  <Image systemName="arrow.up" font={10} foregroundStyle="systemGreen" />
-                  <Text font={13} foregroundStyle="secondaryLabel">{formatSpeed(v.outCurrentSpeed)}</Text>
-                </HStack>
+                <VStack alignment="trailing" spacing={2}>
+                  <HStack spacing={4}>
+                    <Image systemName="arrow.down" font={10} foregroundStyle="systemBlue" />
+                    <Text font={13}>{formatSpeed(v.inCurrentSpeed)}</Text>
+                  </HStack>
+                  <Text font={11} foregroundStyle="tertiaryLabel">{`累计 ${formatBytes(v.in + v.out)}`}</Text>
+                </VStack>
               </HStack>
             ))
           )}
@@ -169,6 +174,5 @@ export function TrafficView() {
         </PanelCard>
       </VStack>
     </ScrollView>
-    </HomeTitleWrapper>
   )
 }
