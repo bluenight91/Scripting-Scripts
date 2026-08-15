@@ -17,7 +17,7 @@ import {
 } from "scripting"
 import { PanelCard } from "../components/PanelCard"
 import { StatCard } from "../components/StatCard"
-import { activeInstance, openRequestsSegment, refreshNow, useStore, type HistoryPoint } from "../lib/store"
+import { activeInstance, needsSetup, openRequestsSegment, refreshNow, useStore, type HistoryPoint } from "../lib/store"
 import { getEvents, getFeature, setFeature, FEATURE_LABELS, type FeatureKey, type SurgeEvent } from "../lib/surgeApi"
 import { InstancesView } from "./InstancesView"
 import {
@@ -81,8 +81,14 @@ export function OverviewView() {
   const peakInParts = peakIn > 0 ? formatSpeedParts(peakIn) : null
   const peakOutParts = peakOut > 0 ? formatSpeedParts(peakOut) : null
   const isHome = Script.env === "home_screen"
+  const setup = needsSetup()
 
   useEffect(() => {
+    if (setup) {
+      setEvents(null)
+      setFeatures(null)
+      return
+    }
     let cancelled = false
     getEvents(state.config)
       .then((r) => {
@@ -106,7 +112,7 @@ export function OverviewView() {
     return () => {
       cancelled = true
     }
-  }, [state.config, state.samples])
+  }, [state.config, state.samples, setup])
 
   async function toggleFeature(k: FeatureKey, v: boolean) {
     setFeatures((f) => (f ? { ...f, [k]: v } : f))
@@ -123,6 +129,7 @@ export function OverviewView() {
   }
 
   async function reload() {
+    if (needsSetup()) return
     await Promise.all([
       refreshNow().catch(() => {}),
       getEvents(state.config)
@@ -182,7 +189,11 @@ export function OverviewView() {
             setShowInst(false)
           }
         },
-        content: showDiag ? <MemoryDiagView /> : <InstancesView />,
+        content: showDiag ? (
+          <MemoryDiagView />
+        ) : (
+          <InstancesView startAdding={setup && state.instances.length === 0} />
+        ),
       }}
     >
       <VStack alignment="leading" spacing={UI.pageSpacing} padding={UI.pagePadding}>
@@ -192,7 +203,12 @@ export function OverviewView() {
             <HStack spacing={8} onTapGesture={() => setShowInst(true)}>
               <Text font={isHome ? 22 : 28} fontWeight="bold">{inst.name}</Text>
               <Image systemName="chevron.up.chevron.down" font={12} foregroundStyle="secondaryLabel" />
-              {state.error ? (
+              {setup ? (
+                <HStack spacing={4}>
+                  <Image systemName="circle.fill" foregroundStyle="secondaryLabel" font={8} />
+                  <Text font={13} foregroundStyle="secondaryLabel">待配置</Text>
+                </HStack>
+              ) : state.error ? (
                 <HStack spacing={4}>
                   <Image systemName="circle.fill" foregroundStyle="systemRed" font={8} />
                   <Text font={13} foregroundStyle="systemRed">未连接</Text>
@@ -210,9 +226,11 @@ export function OverviewView() {
               )}
             </HStack>
             <Text font={13} foregroundStyle="secondaryLabel">
-              {state.updatedAt
-                ? `更新于 ${formatClock(state.updatedAt)} · ${inst.host}:${inst.port}`
-                : "正在连接…"}
+              {setup
+                ? "点按添加 Surge HTTP API 实例"
+                : state.updatedAt
+                  ? `更新于 ${formatClock(state.updatedAt)} · ${inst.host}:${inst.port}`
+                  : "正在连接…"}
             </Text>
           </VStack>
           <Spacer />
@@ -226,13 +244,31 @@ export function OverviewView() {
           ) : null}
         </HStack>
 
-        {state.error ? (
+        {setup ? (
+          <PanelCard>
+            <Text font={UI.titleFont} fontWeight="semibold">开始使用</Text>
+            <Text font={13} foregroundStyle="secondaryLabel">
+              首次安装不会自动连接。添加本机或网关的 Surge HTTP API，并填写 Key 后才会拉取数据。
+            </Text>
+            <Text font={13} foregroundStyle="secondaryLabel">
+              本机默认用 http（Surge 默认 http-api-tls = false）。若选 https，证书由 MITM CA 自签，面板会跳过系统链校验。
+            </Text>
+            <HStack spacing={8} padding={{ top: 4 }} onTapGesture={() => setShowInst(true)}>
+              <Image systemName="plus.circle.fill" foregroundStyle="systemBlue" font={18} />
+              <Text font={15} fontWeight="semibold" foregroundStyle="systemBlue">
+                {state.instances.length === 0 ? "添加实例" : "去完善实例"}
+              </Text>
+            </HStack>
+          </PanelCard>
+        ) : null}
+
+        {!setup && state.error ? (
           <Text font={13} foregroundStyle="systemRed">
             {connectErrorText(state.error)}
           </Text>
         ) : null}
 
-        {features ? (
+        {!setup && features ? (
           <PanelCard spacing={8}>
             <Text font={UI.titleFont} fontWeight="semibold">能力</Text>
             {(Object.keys(FEATURE_LABELS) as FeatureKey[]).map((k) => (
@@ -246,6 +282,8 @@ export function OverviewView() {
           </PanelCard>
         ) : null}
 
+        {!setup ? (
+          <>
         <VStack spacing={12}>
           <HStack spacing={12}>
             <StatCard
@@ -371,6 +409,8 @@ export function OverviewView() {
           </VStack>
           <Image systemName="chevron.right" foregroundStyle="tertiaryLabel" font={12} />
         </HStack>
+          </>
+        ) : null}
       </VStack>
     </ScrollView>
   )

@@ -12,9 +12,11 @@ import { gaugeValue, type MetricSample } from "./metrics"
 import {
   findInstance,
   historyKey,
+  instanceIsReady,
   instanceToConfig,
   loadInstanceState,
   persistInstanceState,
+  EMPTY_INSTANCE,
   type SurgeInstance,
 } from "./instances"
 
@@ -93,8 +95,8 @@ function writeHistory(id: string, history: HistoryPoint[]) {
 }
 
 const boot = loadInstanceState()
-const bootInst = findInstance(boot.instances, boot.activeId) ?? boot.instances[0]
-const bootHistory = readHistory(boot.activeId)
+const bootInst = findInstance(boot.instances, boot.activeId) ?? EMPTY_INSTANCE
+const bootHistory = boot.activeId ? readHistory(boot.activeId) : []
 
 let state: StoreState = {
   instances: boot.instances,
@@ -133,6 +135,27 @@ function patch(partial: Partial<StoreState>) {
 }
 
 function applyActive(instances: SurgeInstance[], activeId: string, extra?: Partial<StoreState>) {
+  if (instances.length === 0) {
+    persistInstanceState([], "")
+    patch({
+      instances: [],
+      activeId: "",
+      config: instanceToConfig(EMPTY_INSTANCE),
+      history: [],
+      speedHistory: emptySpeedHistory(),
+      peakSpeeds: { inSpeed: 0, outSpeed: 0 },
+      samples: null,
+      prevSamples: null,
+      traffic: null,
+      speeds: { inSpeed: 0, outSpeed: 0 },
+      failedRecent: 0,
+      error: null,
+      running: false,
+      updatedAt: null,
+      ...extra,
+    })
+    return
+  }
   const inst = findInstance(instances, activeId) ?? instances[0]
   persistInstanceState(instances, inst.id)
   const history = readHistory(inst.id)
@@ -155,6 +178,11 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
   })
 }
 
+export function needsSetup(): boolean {
+  const inst = findInstance(state.instances, state.activeId) ?? state.instances[0]
+  return !instanceIsReady(inst)
+}
+
 export function subscribe(fn: () => void): () => void {
   listeners.add(fn)
   return () => {
@@ -173,7 +201,7 @@ export function useStore(): StoreState {
 }
 
 export function activeInstance(): SurgeInstance {
-  return findInstance(state.instances, state.activeId) ?? state.instances[0]
+  return findInstance(state.instances, state.activeId) ?? state.instances[0] ?? EMPTY_INSTANCE
 }
 
 export function initStore() {
@@ -215,7 +243,7 @@ export function updateInstance(id: string, patchInst: Partial<SurgeInstance>) {
   if (id === state.activeId) {
     const inst = findInstance(instances, id)!
     patch({ instances, config: instanceToConfig(inst) })
-    refreshNow()
+    void connectActive()
   } else {
     patch({ instances })
   }
@@ -227,25 +255,26 @@ export function addInstance(inst: SurgeInstance) {
   patch({ instances })
 }
 
+export async function connectActive() {
+  if (!instanceIsReady(activeInstance())) return
+  if (started) await refreshNow()
+  else await startPolling()
+}
+
 export async function switchInstance(id: string) {
   if (id === state.activeId) return
-  const wasStarted = started
   stopPolling()
   applyActive(state.instances, id)
-  if (wasStarted) await startPolling()
-  else await refreshNow()
+  await connectActive()
 }
 
 export async function deleteInstance(id: string) {
-  if (state.instances.length <= 1) throw new Error("至少保留一个实例")
   const instances = state.instances.filter((i) => i.id !== id)
   Storage.remove(historyKey(id))
-  if (id === state.activeId) {
-    const wasStarted = started
+  if (id === state.activeId || instances.length === 0) {
     stopPolling()
-    applyActive(instances, instances[0].id)
-    if (wasStarted) await startPolling()
-    else await refreshNow()
+    applyActive(instances, instances[0]?.id ?? "")
+    await connectActive()
   } else {
     persistInstanceState(instances, state.activeId)
     patch({ instances })
@@ -290,7 +319,7 @@ function aggregateCurrentSpeeds(entries: Record<string, TrafficEntry>): {
 }
 
 async function tickTraffic() {
-  if (trafficInFlight) return
+  if (needsSetup() || trafficInFlight) return
   trafficInFlight = true
   const t0 = Date.now()
   try {
@@ -335,6 +364,7 @@ function armTraffic(delay: number) {
 }
 
 async function tick() {
+  if (needsSetup()) return
   const { config, prefs, samples: prev, history, speeds, activeId } = state
   const now = Date.now()
   try {
@@ -398,6 +428,7 @@ function restartPolling() {
 
 export async function startPolling() {
   if (started) return
+  if (needsSetup()) return
   started = true
   await Promise.all([tick(), tickTraffic()])
   scheduleNext()
@@ -410,6 +441,7 @@ export function stopPolling() {
 }
 
 export async function refreshNow() {
+  if (needsSetup()) return
   await Promise.all([tick(), tickTraffic()])
 }
 

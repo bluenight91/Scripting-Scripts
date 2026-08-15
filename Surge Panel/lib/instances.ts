@@ -60,13 +60,17 @@ export function loadInstanceState(): { instances: SurgeInstance[]; activeId: str
   }
 
   const legacy = Storage.get(LEGACY_CONFIG_KEY) as SurgeConfig | null
+  // 仅在旧版确实保存过连接时迁移；全新安装保持空列表，避免立刻去连
+  if (!legacy || (!legacy.key?.trim() && !legacy.host?.trim())) {
+    return { instances: [], activeId: "" }
+  }
   const inst: SurgeInstance = {
     id: newInstanceId(),
     name: "本机",
-    protocol: legacy?.protocol ?? DEFAULT_CONFIG.protocol,
-    host: legacy?.host ?? DEFAULT_CONFIG.host,
-    port: legacy?.port ?? DEFAULT_CONFIG.port,
-    key: legacy?.key ?? DEFAULT_CONFIG.key,
+    protocol: legacy.protocol ?? DEFAULT_CONFIG.protocol,
+    host: legacy.host ?? DEFAULT_CONFIG.host,
+    port: legacy.port ?? DEFAULT_CONFIG.port,
+    key: legacy.key ?? DEFAULT_CONFIG.key,
   }
   const legacyHist = Storage.get(LEGACY_HISTORY_KEY)
   if (Array.isArray(legacyHist)) {
@@ -74,6 +78,16 @@ export function loadInstanceState(): { instances: SurgeInstance[]; activeId: str
   }
   persistInstanceState([inst], inst.id)
   return { instances: [inst], activeId: inst.id }
+}
+
+export const EMPTY_INSTANCE: SurgeInstance = {
+  id: "",
+  name: "未配置",
+  ...DEFAULT_CONFIG,
+}
+
+export function instanceIsReady(inst: SurgeInstance | undefined): boolean {
+  return !!inst && inst.key.trim().length > 0 && inst.host.trim().length > 0
 }
 
 export function persistInstanceState(instances: SurgeInstance[], activeId: string) {

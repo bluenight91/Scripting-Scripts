@@ -20,13 +20,12 @@ import {
   deleteInstance,
   switchInstance,
   updateInstance,
-  useStore,
 } from "../lib/store"
 import { getEnvironment, probeOutbound } from "../lib/surgeApi"
 
-export function InstancesView() {
+export function InstancesView({ startAdding = false }: { startAdding?: boolean }) {
   const [editing, setEditing] = useState<SurgeInstance | null>(null)
-  const [adding, setAdding] = useState(false)
+  const [adding, setAdding] = useState(startAdding)
 
   if (adding) {
     return (
@@ -63,7 +62,6 @@ export function InstanceEditor({
   isNew: boolean
   onDone?: () => void
 }) {
-  const state = useStore()
   const [name, setName] = useState(initial.name)
   const [protocol, setProtocol] = useState<"http" | "https">(initial.protocol)
   const [host, setHost] = useState(initial.host)
@@ -153,18 +151,28 @@ export function InstanceEditor({
       <Section>
         <TextField label={<Text>名称</Text>} value={name} onChanged={setName} prompt="本机 / 网关" />
         <Picker title="协议" pickerStyle="segmented" value={protocol} onChanged={(v: string) => setProtocol(v as "http" | "https")}>
-          <Text tag="https">https</Text>
           <Text tag="http">http</Text>
+          <Text tag="https">https</Text>
         </Picker>
         <TextField label={<Text>主机</Text>} value={host} onChanged={setHost} prompt="127.0.0.1" />
         <TextField label={<Text>端口</Text>} value={port} onChanged={setPort} prompt="6166" />
         <SecureField label={<Text>API Key</Text>} value={key} onChanged={setKey} prompt="X-Key" />
       </Section>
-      <Section footer={msg ? <Text font={13}>{msg}</Text> : <Text font={13}>用 GET /v1/outbound 测试连通。</Text>}>
+      <Section
+        footer={
+          <Text font={13}>
+            {msg
+              ? msg
+              : protocol === "https"
+                ? "HTTPS 使用 Surge MITM 自签证书，面板会跳过系统链校验。本机默认 http-api-tls = false，一般用 http。"
+                : "用 GET /v1/outbound 测试连通。本机默认 http-api-tls = false。"}
+          </Text>
+        }
+      >
         <Button title={busy ? "测试中…" : "测试连通"} systemImage="antenna.radiowaves.left.and.right" disabled={busy} action={() => { void test() }} />
         <Button title="保存" systemImage="checkmark.circle" action={() => { void save() }} />
       </Section>
-      {!isNew && state.instances.length > 1 ? (
+      {!isNew ? (
         <Section>
           <Button title="删除实例" role="destructive" systemImage="trash" action={() => setConfirmDelete(true)} />
         </Section>

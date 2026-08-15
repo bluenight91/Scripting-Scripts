@@ -5,7 +5,6 @@ import {
   Image,
   List,
   Section,
-  Spacer,
   Text,
   VStack,
 } from "scripting"
@@ -24,7 +23,12 @@ export function InstanceList({
   return (
     <List navigationTitle="实例">
       <Section footer={<Text font={13}>一次只连接一个 Surge HTTP API。点按切换，不会重新打开面板。</Text>}>
-        {state.instances.map((inst) => {
+        {state.instances.length === 0 ? (
+          <Text font={15} foregroundStyle="secondaryLabel">
+            还没有实例。添加本机或网关的 HTTP API 后才会连接。
+          </Text>
+        ) : (
+          state.instances.map((inst) => {
           const active = inst.id === state.activeId
           return (
             <HStack
@@ -54,7 +58,8 @@ export function InstanceList({
               )}
             </HStack>
           )
-        })}
+        })
+        )}
       </Section>
       {onAdd ? (
         <Section>

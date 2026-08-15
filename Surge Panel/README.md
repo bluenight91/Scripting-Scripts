@@ -18,7 +18,7 @@
    - 下载仓库根目录的 [`Surge Panel.scripting`](../Surge%20Panel.scripting)，用 Scripting 打开
    - 或将整个 `Surge Panel` 目录放入 Scripting 的脚本目录
 2. 在 Surge 中开启 HTTP API（`http-api = 0.0.0.0:6166` + `http-api-key`）与 Prometheus Metrics Endpoint
-3. 首次运行会生成「本机」实例，在「设置 → 实例」填写 Key；需要监控其它设备时再添加实例
+3. 首次打开不会自动连接。到总览或「设置 → 实例」添加本机 / 网关 HTTP API 并填写 Key（本机默认 http；https 会跳过 MITM 自签证书校验）
 4. 可选：Scripting 设置 → Show Home Tab → 选择本脚本
 
 更新记录见 [`changelog.md`](./changelog.md)。导入后若说明有变化会弹出更新说明。

@@ -10,11 +10,26 @@ export type SurgeConfig = {
 }
 
 export const DEFAULT_CONFIG: SurgeConfig = {
-  protocol: "https",
+  // Surge 默认 http-api-tls = false；HTTPS 用 MITM 自签证书，请求需跳过系统链校验
+  protocol: "http",
   host: "127.0.0.1",
   port: "6166",
-  // 在脚本「设置」页填写你的 Surge HTTP API Key（Surge 配置中的 http-api-key）
   key: "",
+}
+
+/** Surge HTTP API 的 TLS 证书由 MITM CA 签发，系统链校验会失败；鉴权靠 X-Key */
+function allowInsecure(_c: SurgeConfig): boolean {
+  return true
+}
+
+function wrapFetchError(e: unknown): Error {
+  const s = String(e)
+  if (/TLS|TlsHandler|证书|certificate/i.test(s)) {
+    return new Error(
+      `${s}。Surge HTTPS API 使用 MITM 自签证书。可改用 http（默认 http-api-tls = false），或确认 Scripting 已允许本地网络。`
+    )
+  }
+  return e instanceof Error ? e : new Error(s)
 }
 
 function urlOf(c: SurgeConfig, path: string): string {
@@ -37,8 +52,10 @@ async function request<T>(
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
     timeout: 30,
-    allowInsecureRequest: c.protocol === "http",
+    allowInsecureRequest: allowInsecure(c),
     debugLabel: `surge-panel ${method} ${path}`,
+  }).catch((e) => {
+    throw wrapFetchError(e)
   })
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}${res.status === 401 ? "（Key 无效）" : ""}`)
@@ -61,8 +78,10 @@ export async function fetchMetrics(c: SurgeConfig): Promise<MetricSample[]> {
   const res = await fetch(urlOf(c, "/v1/metrics"), {
     headers: { "X-Key": c.key },
     timeout: 15,
-    allowInsecureRequest: c.protocol === "http",
+    allowInsecureRequest: allowInsecure(c),
     debugLabel: "surge-panel metrics",
+  }).catch((e) => {
+    throw wrapFetchError(e)
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return parsePrometheus(await res.text())
@@ -233,8 +252,10 @@ export async function probeOutbound(c: SurgeConfig): Promise<ProbeResult> {
     method: "GET",
     headers: { "X-Key": c.key },
     timeout: 10,
-    allowInsecureRequest: c.protocol === "http",
+    allowInsecureRequest: allowInsecure(c),
     debugLabel: "surge-panel probe",
+  }).catch((e) => {
+    throw wrapFetchError(e)
   })
   const latencyMs = Date.now() - t0
   if (!res.ok) {
