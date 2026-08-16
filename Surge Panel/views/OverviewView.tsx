@@ -17,7 +17,7 @@ import {
 } from "scripting"
 import { PanelCard } from "../components/PanelCard"
 import { StatCard } from "../components/StatCard"
-import { activeInstance, needsSetup, openRequestsSegment, refreshNow, useStore, type HistoryPoint } from "../lib/store"
+import { activeInstance, needsSetup, openRequestsSegment, refreshNow, savePrefs, useStore, type HistoryPoint } from "../lib/store"
 import {
   evaluateScript,
   getDns,
@@ -39,6 +39,8 @@ import {
   formatSpeedParts,
   formatUptime,
   gaugeValue,
+  displayHostPort,
+  displayPrimaryAddrs,
   parsePrimaryAddresses,
 } from "../lib/metrics"
 import { connectErrorText, METRICS_HINT, UI, cardBackground } from "../lib/ui"
@@ -212,7 +214,9 @@ export function OverviewView() {
   )
 
   const latestEvent = events && events.length > 0 ? events[0] : null
-  const localAddrText = [localAddrs.ipv4, localAddrs.ipv6].filter(Boolean).join(" / ")
+  const hideAddresses = state.prefs.hideAddresses
+  const endpointText = displayHostPort(inst.host, inst.port, hideAddresses)
+  const localAddrText = displayPrimaryAddrs(localAddrs, hideAddresses)
   const activityBadge =
     state.failedRecent > 0 || state.rejectedRecent > 0
       ? `失败 ${state.failedRecent} · 拒绝 ${state.rejectedRecent}`
@@ -270,13 +274,29 @@ export function OverviewView() {
                 </HStack>
               )}
             </HStack>
-            <Text font={13} foregroundStyle="secondaryLabel">
-              {setup
-                ? "点按添加 Surge HTTP API 实例"
-                : state.updatedAt
-                  ? `更新于 ${formatClock(state.updatedAt)} · ${inst.host}:${inst.port}${localAddrText ? ` · ${localAddrText}` : ""}`
-                  : "正在连接…"}
-            </Text>
+            <HStack
+              spacing={6}
+              onTapGesture={
+                setup
+                  ? undefined
+                  : () => savePrefs({ ...state.prefs, hideAddresses: !hideAddresses })
+              }
+            >
+              <Text font={13} foregroundStyle="secondaryLabel">
+                {setup
+                  ? "点按添加 Surge HTTP API 实例"
+                  : state.updatedAt
+                    ? `更新于 ${formatClock(state.updatedAt)} · ${endpointText}${localAddrText ? ` · ${localAddrText}` : ""}`
+                    : "正在连接…"}
+              </Text>
+              {setup ? null : (
+                <Image
+                  systemName={hideAddresses ? "eye.slash" : "eye"}
+                  font={11}
+                  foregroundStyle="tertiaryLabel"
+                />
+              )}
+            </HStack>
           </VStack>
           <Spacer />
           {info ? (
