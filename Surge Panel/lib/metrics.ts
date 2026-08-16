@@ -236,6 +236,35 @@ export function countFakeIps(addrs: string[]): number {
   return seen.size
 }
 
+/** 截图分享时遮住地址，不保留网段信息 */
+export function maskIp(addr: string): string {
+  const s = addr.trim()
+  if (!s) return s
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(s)) return "•.•.•.•"
+  if (s.includes(":")) return "•:•:•:•"
+  return "•••"
+}
+
+export function maskHost(host: string): string {
+  const s = host.trim()
+  if (!s) return s
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(s) || s.includes(":")) return maskIp(s)
+  return "•••"
+}
+
+export function displayHostPort(host: string, port: string, hidden: boolean): string {
+  const h = hidden ? maskHost(host) : host.trim()
+  const p = port.trim()
+  return p ? `${h}:${p}` : h
+}
+
+export function displayPrimaryAddrs(addrs: { ipv4?: string; ipv6?: string }, hidden: boolean): string {
+  return [addrs.ipv4, addrs.ipv6]
+    .filter((x): x is string => Boolean(x))
+    .map((a) => (hidden ? maskIp(a) : a))
+    .join(" / ")
+}
+
 export function parsePrimaryAddresses(raw: unknown): { ipv4?: string; ipv6?: string } {
   let value: unknown = raw
   if (typeof value === "string") {

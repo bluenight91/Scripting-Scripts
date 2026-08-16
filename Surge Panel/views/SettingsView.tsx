@@ -37,7 +37,7 @@ import {
   type ProfileLine,
   type ProfileSection,
 } from "../lib/surgeApi"
-import { parsePrimaryAddresses } from "../lib/metrics"
+import { displayHostPort, displayPrimaryAddrs, parsePrimaryAddresses } from "../lib/metrics"
 import { ChangelogView } from "../components/ReleaseNotesSheet"
 import { clearHistory, needsSetup, savePrefs, useStore } from "../lib/store"
 import { ScriptsView } from "./ScriptsView"
@@ -66,7 +66,7 @@ export function SettingsView() {
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   // 日志级别（API 无读取端点，仅展示默认；修改立即生效）
   const [logLevel, setLogLevel] = useState("notify")
-  const [localAddrText, setLocalAddrText] = useState("")
+  const [localAddrs, setLocalAddrs] = useState<{ ipv4?: string; ipv6?: string }>({})
 
   async function loadEngineState() {
     if (needsSetup()) {
@@ -75,16 +75,15 @@ export function SettingsView() {
       setPolicyChoices([])
       setFeatures(null)
       setEngineError(null)
-      setLocalAddrText("")
+      setLocalAddrs({})
       return
     }
     evaluateScript(state.config, "$done($network)", "generic", 3)
       .then((raw) => {
-        const addrs = parsePrimaryAddresses(raw)
-        setLocalAddrText([addrs.ipv4, addrs.ipv6].filter(Boolean).join(" / "))
+        setLocalAddrs(parsePrimaryAddresses(raw))
       })
       .catch(() => {
-        setLocalAddrText("")
+        setLocalAddrs({})
       })
     try {
       const [ob, f] = await Promise.all([
@@ -177,6 +176,8 @@ export function SettingsView() {
     }
   }
 
+  const instanceAddrNote = displayPrimaryAddrs(localAddrs, state.prefs.hideAddresses)
+
   return (
     <List
       navigationTitle={Script.env === "home_screen" ? undefined : "设置"}
@@ -205,14 +206,14 @@ export function SettingsView() {
       }}
     >
       {/* 实例 */}
-      <Section header={<Text>实例</Text>} footer={<Text font={13}>{needsSetup() ? "还没有可连接的实例。先添加本机或网关 HTTP API 并填写 Key。" : `可添加本机与网关等多个 Surge HTTP API，点按切换。当前：${state.instances.find((i) => i.id === state.activeId)?.name ?? "—"}（${state.config.host}:${state.config.port}）${localAddrText ? ` · ${localAddrText}` : ""}`}</Text>}>
+      <Section header={<Text>实例</Text>} footer={<Text font={13}>{needsSetup() ? "还没有可连接的实例。先添加本机或网关 HTTP API 并填写 Key。" : `可添加本机与网关等多个 Surge HTTP API，点按切换。当前：${state.instances.find((i) => i.id === state.activeId)?.name ?? "—"}（${displayHostPort(state.config.host, state.config.port, state.prefs.hideAddresses)}）${instanceAddrNote ? ` · ${instanceAddrNote}` : ""}`}</Text>}>
         <NavigationLink title="管理实例" destination={<InstancesView />} />
       </Section>
 
       {/* 面板 */}
       <Section
         header={<Text>面板</Text>}
-        footer={<Text font={13}>刷新间隔用于内存趋势与引擎指标。实时速率图固定 1 秒采样（/v1/traffic），与 Surge Web Dashboard 一致。</Text>}
+        footer={<Text font={13}>刷新间隔用于内存趋势与引擎指标。实时速率图固定 1 秒采样（/v1/traffic），与 Surge Web Dashboard 一致。总览点按地址也可隐藏本机 IP，方便截图。</Text>}
       >
         <NavigationLink title="更新说明" destination={<ChangelogView />} />
         <Toggle
@@ -238,6 +239,11 @@ export function SettingsView() {
           <Text tag="360">360 点（约 30 分钟）</Text>
           <Text tag="720">720 点（约 1 小时）</Text>
         </Picker>
+        <Toggle
+          title="隐藏总览地址"
+          value={state.prefs.hideAddresses}
+          onChanged={(v: boolean) => savePrefs({ ...state.prefs, hideAddresses: v })}
+        />
         <Button title="清空采样历史" role="destructive" systemImage="trash" action={() => setConfirm("clearHistory")} />
       </Section>
 

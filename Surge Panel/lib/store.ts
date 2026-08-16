@@ -37,6 +37,8 @@ export type Prefs = {
   autoRefresh: boolean
   intervalSec: 3 | 5 | 10
   maxPoints: 180 | 360 | 720
+  /** 总览隐藏实例地址与本机 IP，方便截图分享 */
+  hideAddresses: boolean
 }
 
 export type RequestsSegment = "active" | "recent" | "events" | "dns" | "rules"
@@ -65,7 +67,12 @@ export type StoreState = {
 }
 
 const PREFS_KEY = "surge_panel_prefs"
-const DEFAULT_PREFS: Prefs = { autoRefresh: true, intervalSec: 5, maxPoints: 720 }
+const DEFAULT_PREFS: Prefs = { autoRefresh: true, intervalSec: 5, maxPoints: 720, hideAddresses: false }
+
+function readPrefs(): Prefs {
+  const saved = Storage.get(PREFS_KEY) as Partial<Prefs> | null
+  return { ...DEFAULT_PREFS, ...(saved ?? {}) }
+}
 
 export const SPEED_REFRESH_MS = 1000
 export const SPEED_HISTORY_SIZE = 60
@@ -214,17 +221,22 @@ export function activeInstance(): SurgeInstance {
 }
 
 export function initStore() {
-  const savedPrefs = Storage.get(PREFS_KEY) as Prefs | null
   const loaded = loadInstanceState()
   applyActive(loaded.instances, loaded.activeId, {
-    prefs: savedPrefs ?? DEFAULT_PREFS,
+    prefs: readPrefs(),
   })
 }
 
 export function savePrefs(prefs: Prefs) {
+  const prev = state.prefs
   Storage.set(PREFS_KEY, prefs)
   patch({ prefs })
-  if (started) restartPolling()
+  if (
+    started &&
+    (prefs.autoRefresh !== prev.autoRefresh || prefs.intervalSec !== prev.intervalSec)
+  ) {
+    restartPolling()
+  }
 }
 
 export function clearHistory() {
