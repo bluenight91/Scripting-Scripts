@@ -8,7 +8,7 @@ import {
   type TrafficEntry,
   type TrafficSnapshot,
 } from "./surgeApi"
-import { gaugeValue, type MetricSample } from "./metrics"
+import { gaugeValue, isRejectPolicy, type MetricSample } from "./metrics"
 import {
   findInstance,
   historyKey,
@@ -54,6 +54,7 @@ export type StoreState = {
   speeds: { inSpeed: number; outSpeed: number }
   peakSpeeds: { inSpeed: number; outSpeed: number }
   failedRecent: number
+  rejectedRecent: number
   history: HistoryPoint[]
   speedHistory: SpeedPoint[]
   traffic: TrafficSnapshot | null
@@ -113,6 +114,7 @@ let state: StoreState = {
   speeds: { inSpeed: 0, outSpeed: 0 },
   peakSpeeds: maxSpeedFromHistory(bootHistory),
   failedRecent: 0,
+  rejectedRecent: 0,
   history: bootHistory,
   speedHistory: emptySpeedHistory(),
   traffic: null,
@@ -152,6 +154,7 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
       traffic: null,
       speeds: { inSpeed: 0, outSpeed: 0 },
       failedRecent: 0,
+      rejectedRecent: 0,
       error: null,
       running: false,
       updatedAt: null,
@@ -175,6 +178,7 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
     traffic: null,
     speeds: { inSpeed: 0, outSpeed: 0 },
     failedRecent: 0,
+    rejectedRecent: 0,
     error: null,
     running: false,
     updatedAt: null,
@@ -406,7 +410,10 @@ async function tick() {
   if (tickCount % 3 === 1) {
     try {
       const { requests } = await getRecentRequests(state.config)
-      patch({ failedRecent: requests.filter((r) => r.failed).length })
+      patch({
+        failedRecent: requests.filter((r) => r.failed).length,
+        rejectedRecent: requests.filter((r) => r.rejected || isRejectPolicy(r.policyName)).length,
+      })
     } catch {
       // 忽略
     }

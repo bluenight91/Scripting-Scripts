@@ -18,16 +18,28 @@ import {
 import { PanelCard } from "../components/PanelCard"
 import { StatCard } from "../components/StatCard"
 import { activeInstance, needsSetup, openRequestsSegment, refreshNow, useStore, type HistoryPoint } from "../lib/store"
-import { getEvents, getFeature, setFeature, FEATURE_LABELS, type FeatureKey, type SurgeEvent } from "../lib/surgeApi"
+import {
+  evaluateScript,
+  getDns,
+  getEvents,
+  getFeature,
+  setFeature,
+  FEATURE_LABELS,
+  type FeatureKey,
+  type SurgeEvent,
+} from "../lib/surgeApi"
 import { InstancesView } from "./InstancesView"
 import {
   buildInfo,
+  collectRecordAddresses,
+  countFakeIps,
   formatBytesParts,
   formatClock,
   formatEventTime,
   formatSpeedParts,
   formatUptime,
   gaugeValue,
+  parsePrimaryAddresses,
 } from "../lib/metrics"
 import { connectErrorText, METRICS_HINT, UI, cardBackground } from "../lib/ui"
 import { MemoryDiagView } from "./MemoryDiagView"
@@ -66,6 +78,8 @@ export function OverviewView() {
   const [showInst, setShowInst] = useState(false)
   const [events, setEvents] = useState<SurgeEvent[] | null>(null)
   const [features, setFeatures] = useState<Record<FeatureKey, boolean> | null>(null)
+  const [fakeIpCount, setFakeIpCount] = useState<number | null>(null)
+  const [localAddrs, setLocalAddrs] = useState<{ ipv4?: string; ipv6?: string }>({})
 
   const mem = state.samples ? gaugeValue(state.samples, "surge_memory_bytes") : null
   const uptime = state.samples ? gaugeValue(state.samples, "surge_uptime_seconds") : null
@@ -88,6 +102,8 @@ export function OverviewView() {
     if (setup) {
       setEvents(null)
       setFeatures(null)
+      setFakeIpCount(null)
+      setLocalAddrs({})
       return
     }
     let cancelled = false
@@ -109,6 +125,25 @@ export function OverviewView() {
       })
       .catch(() => {
         if (!cancelled) setFeatures(null)
+      })
+    getDns(state.config)
+      .then((r) => {
+        if (cancelled) return
+        const addrs = [
+          ...collectRecordAddresses(r.local),
+          ...collectRecordAddresses(r.dnsCache),
+        ]
+        setFakeIpCount(countFakeIps(addrs))
+      })
+      .catch(() => {
+        if (!cancelled) setFakeIpCount(null)
+      })
+    evaluateScript(state.config, "$done($network)", "generic", 3)
+      .then((raw) => {
+        if (!cancelled) setLocalAddrs(parsePrimaryAddresses(raw))
+      })
+      .catch(() => {
+        if (!cancelled) setLocalAddrs({})
       })
     return () => {
       cancelled = true
@@ -177,6 +212,15 @@ export function OverviewView() {
   )
 
   const latestEvent = events && events.length > 0 ? events[0] : null
+  const localAddrText = [localAddrs.ipv4, localAddrs.ipv6].filter(Boolean).join(" / ")
+  const activityBadge =
+    state.failedRecent > 0 || state.rejectedRecent > 0
+      ? `失败 ${state.failedRecent} · 拒绝 ${state.rejectedRecent}`
+      : undefined
+  const dnsParts: string[] = []
+  if (fakeIpCount != null && fakeIpCount > 0) dnsParts.push(`Fake-IP ${fakeIpCount}`)
+  if (bans !== null) dnsParts.push(`活动封禁 ${bans}`)
+  const dnsSubtitle = dnsParts.length > 0 ? dnsParts.join(" · ") : "缓存条目"
 
   return (
     <ScrollView
@@ -230,7 +274,7 @@ export function OverviewView() {
               {setup
                 ? "点按添加 Surge HTTP API 实例"
                 : state.updatedAt
-                  ? `更新于 ${formatClock(state.updatedAt)} · ${inst.host}:${inst.port}`
+                  ? `更新于 ${formatClock(state.updatedAt)} · ${inst.host}:${inst.port}${localAddrText ? ` · ${localAddrText}` : ""}`
                   : "正在连接…"}
             </Text>
           </VStack>
@@ -332,7 +376,7 @@ export function OverviewView() {
               iconColor="systemOrange"
               title="活动连接"
               value={active !== null ? String(active) : "—"}
-              badge={state.failedRecent > 0 ? `近期失败 ${state.failedRecent}` : undefined}
+              badge={activityBadge}
               subtitle="HTTP 请求"
             />
             <StatCard
@@ -340,7 +384,7 @@ export function OverviewView() {
               iconColor="systemTeal"
               title="DNS 缓存"
               value={dns !== null ? String(dns) : "—"}
-              subtitle={bans !== null ? `活动封禁 ${bans}` : "缓存条目"}
+              subtitle={dnsSubtitle}
             />
           </HStack>
         </VStack>

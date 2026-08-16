@@ -1,12 +1,14 @@
 // 设置 Tab：连接、面板、引擎、脚本、配置
 import {
   Button,
+  HStack,
   List,
   Navigation,
   NavigationLink,
   Picker,
   Script,
   Section,
+  Spacer,
   Text,
   Toggle,
   useEffect,
@@ -14,6 +16,7 @@ import {
   VStack,
 } from "scripting"
 import {
+  evaluateScript,
   formatProfileValue,
   getCurrentProfile,
   getFeature,
@@ -31,7 +34,10 @@ import {
   stopEngine,
   FEATURE_LABELS,
   type FeatureKey,
+  type ProfileLine,
+  type ProfileSection,
 } from "../lib/surgeApi"
+import { parsePrimaryAddresses } from "../lib/metrics"
 import { ChangelogView } from "../components/ReleaseNotesSheet"
 import { clearHistory, needsSetup, savePrefs, useStore } from "../lib/store"
 import { ScriptsView } from "./ScriptsView"
@@ -53,7 +59,6 @@ export function SettingsView() {
   const [globalPolicy, setGlobalPolicy] = useState<string | null>(null)
   const [policyChoices, setPolicyChoices] = useState<string[]>([])
   const [features, setFeatures] = useState<Record<FeatureKey, boolean> | null>(null)
-  const [modules, setModules] = useState<{ available: string[]; enabled: string[] } | null>(null)
   const [engineError, setEngineError] = useState<string | null>(null)
 
   // 确认弹窗
@@ -61,6 +66,7 @@ export function SettingsView() {
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   // 日志级别（API 无读取端点，仅展示默认；修改立即生效）
   const [logLevel, setLogLevel] = useState("notify")
+  const [localAddrText, setLocalAddrText] = useState("")
 
   async function loadEngineState() {
     if (needsSetup()) {
@@ -68,14 +74,21 @@ export function SettingsView() {
       setGlobalPolicy(null)
       setPolicyChoices([])
       setFeatures(null)
-      setModules(null)
       setEngineError(null)
+      setLocalAddrText("")
       return
     }
+    evaluateScript(state.config, "$done($network)", "generic", 3)
+      .then((raw) => {
+        const addrs = parsePrimaryAddresses(raw)
+        setLocalAddrText([addrs.ipv4, addrs.ipv6].filter(Boolean).join(" / "))
+      })
+      .catch(() => {
+        setLocalAddrText("")
+      })
     try {
-      const [ob, m, f] = await Promise.all([
+      const [ob, f] = await Promise.all([
         getOutboundMode(state.config),
-        getModules(state.config),
         Promise.all(
           (Object.keys(FEATURE_LABELS) as FeatureKey[]).map(async (k) => {
             const r = await getFeature(state.config, k)
@@ -84,7 +97,6 @@ export function SettingsView() {
         ),
       ])
       setOutbound(ob.mode)
-      setModules(m)
       setFeatures(Object.fromEntries(f) as Record<FeatureKey, boolean>)
       setEngineError(null)
       // 全局模式下的默认策略与可选策略列表
@@ -146,23 +158,6 @@ export function SettingsView() {
     }
   }
 
-  async function toggleModule(name: string, v: boolean) {
-    setModules((m) =>
-      m
-        ? {
-            available: m.available,
-            enabled: v ? [...m.enabled, name] : m.enabled.filter((x) => x !== name),
-          }
-        : m
-    )
-    try {
-      await setModule(state.config, name, v)
-    } catch (e) {
-      setEngineError(String(e))
-      loadEngineState()
-    }
-  }
-
   async function runConfirmed() {
     const what = confirm
     setConfirm(null)
@@ -210,7 +205,7 @@ export function SettingsView() {
       }}
     >
       {/* 实例 */}
-      <Section header={<Text>实例</Text>} footer={<Text font={13}>{needsSetup() ? "还没有可连接的实例。先添加本机或网关 HTTP API 并填写 Key。" : `可添加本机与网关等多个 Surge HTTP API，点按切换。当前：${state.instances.find((i) => i.id === state.activeId)?.name ?? "—"}（${state.config.host}:${state.config.port}）`}</Text>}>
+      <Section header={<Text>实例</Text>} footer={<Text font={13}>{needsSetup() ? "还没有可连接的实例。先添加本机或网关 HTTP API 并填写 Key。" : `可添加本机与网关等多个 Surge HTTP API，点按切换。当前：${state.instances.find((i) => i.id === state.activeId)?.name ?? "—"}（${state.config.host}:${state.config.port}）${localAddrText ? ` · ${localAddrText}` : ""}`}</Text>}>
         <NavigationLink title="管理实例" destination={<InstancesView />} />
       </Section>
 
@@ -247,7 +242,16 @@ export function SettingsView() {
       </Section>
 
       {/* 引擎：出站、功能开关、模块、日志 */}
-      <Section header={<Text>引擎</Text>} footer={engineError ? <Text font={13} foregroundStyle="systemRed">{engineError}</Text> : undefined}>
+      <Section
+        header={<Text>引擎</Text>}
+        footer={
+          engineError ? (
+            <Text font={13} foregroundStyle="systemRed">{engineError}</Text>
+          ) : (
+            <Text font={13}>模块在子页开关，可用系统搜索栏筛选。</Text>
+          )
+        }
+      >
         {outbound === null ? (
           <Text foregroundStyle="secondaryLabel">{engineError ? "出站模式不可用" : "加载出站模式…"}</Text>
         ) : (
@@ -278,20 +282,7 @@ export function SettingsView() {
             <Toggle key={k} title={ENGINE_FEATURE_LABELS[k]} value={features[k]} onChanged={(v: boolean) => toggleFeature(k, v)} />
           ))
         )}
-        {modules === null ? (
-          <Text foregroundStyle="secondaryLabel">{engineError ? "模块不可用" : "加载模块…"}</Text>
-        ) : modules.available.length === 0 ? (
-          <Text foregroundStyle="secondaryLabel">无可用模块</Text>
-        ) : (
-          modules.available.map((name) => (
-            <Toggle
-              key={name}
-              title={name}
-              value={modules.enabled.includes(name)}
-              onChanged={(v: boolean) => toggleModule(name, v)}
-            />
-          ))
-        )}
+        {needsSetup() ? null : <NavigationLink title="模块" destination={<ModulesView />} />}
       </Section>
 
       {/* 脚本 */}
@@ -316,10 +307,173 @@ export function SettingsView() {
   )
 }
 
-// ---------- 查看当前配置 ----------
+// ---------- 模块（子页，避免把设置引擎区拉得很长） ----------
+
+function ModulesView() {
+  const state = useStore()
+  const [modules, setModules] = useState<{ available: string[]; enabled: string[] } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [query, setQuery] = useState("")
+
+  async function load() {
+    if (needsSetup()) {
+      setModules(null)
+      setError(null)
+      return
+    }
+    try {
+      setModules(await getModules(state.config))
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  useEffect(() => {
+    void load()
+  }, [state.config])
+
+  async function toggleModule(name: string, v: boolean) {
+    setModules((m) =>
+      m
+        ? {
+            available: m.available,
+            enabled: v ? [...m.enabled, name] : m.enabled.filter((x) => x !== name),
+          }
+        : m
+    )
+    try {
+      await setModule(state.config, name, v)
+    } catch (e) {
+      setError(String(e))
+      void load()
+    }
+  }
+
+  const q = query.trim().toLowerCase()
+  const available = modules?.available ?? []
+  const enabled = modules?.enabled ?? []
+  const shown = q ? available.filter((name) => name.toLowerCase().includes(q)) : available
+
+  return (
+    <List
+      navigationTitle="模块"
+      refreshable={async () => { await load() }}
+      searchable={{
+        value: query,
+        onChanged: setQuery,
+        prompt: "模块名",
+        placement: "navigationBarDrawer",
+      }}
+    >
+      {error ? (
+        <Section>
+          <Text foregroundStyle="systemRed">{error}</Text>
+        </Section>
+      ) : null}
+      <Section
+        header={<Text>{modules ? `已启用 ${enabled.length} / ${available.length}` : "模块"}</Text>}
+        footer={<Text font={13}>下拉可刷新。开关立即写入当前 Surge 实例。</Text>}
+      >
+        {modules === null && !error ? (
+          <Text foregroundStyle="secondaryLabel">加载中…</Text>
+        ) : shown.length === 0 ? (
+          <Text foregroundStyle="secondaryLabel">{q ? "无匹配模块" : "无可用模块"}</Text>
+        ) : (
+          shown.map((name) => (
+            <Toggle
+              key={name}
+              title={name}
+              value={enabled.includes(name)}
+              onChanged={(v: boolean) => toggleModule(name, v)}
+            />
+          ))
+        )}
+      </Section>
+    </List>
+  )
+}
+
+// ---------- 查看当前配置：分段索引 + 子页，避免一次渲染整份配置 ----------
 
 function isCommentLine(text: string): boolean {
   return text.startsWith("#") || text.startsWith(";") || text.startsWith("//")
+}
+
+function profileLineMatches(line: ProfileLine, q: string): boolean {
+  if (!q) return true
+  if (line.kind === "kv") {
+    return line.key.toLowerCase().includes(q) || line.value.toLowerCase().includes(q)
+  }
+  return line.text.toLowerCase().includes(q)
+}
+
+function profileSectionMatches(sec: ProfileSection, q: string): boolean {
+  if (!q) return true
+  if (sec.name.toLowerCase().includes(q)) return true
+  return sec.lines.some((line) => profileLineMatches(line, q))
+}
+
+function ProfileLineRow({ line }: { line: ProfileLine }) {
+  if (line.kind === "kv") {
+    return (
+      <VStack alignment="leading" spacing={4} padding={{ vertical: 4 }}>
+        <Text font={13} fontWeight="medium" foregroundStyle="secondaryLabel">
+          {line.key}
+        </Text>
+        <Text
+          font={15}
+          multilineTextAlignment="leading"
+          frame={{ maxWidth: "infinity", alignment: "leading" }}
+        >
+          {formatProfileValue(line.value)}
+        </Text>
+      </VStack>
+    )
+  }
+  return (
+    <Text
+      font={14}
+      foregroundStyle={isCommentLine(line.text) ? "secondaryLabel" : "label"}
+      multilineTextAlignment="leading"
+      frame={{ maxWidth: "infinity", alignment: "leading" }}
+    >
+      {line.text}
+    </Text>
+  )
+}
+
+function ProfileSectionView({
+  section,
+  initialQuery = "",
+}: {
+  section: ProfileSection
+  initialQuery?: string
+}) {
+  const [query, setQuery] = useState(initialQuery)
+  const q = query.trim().toLowerCase()
+  const shown = q ? section.lines.filter((line) => profileLineMatches(line, q)) : section.lines
+  const title = section.name || "未命名"
+
+  return (
+    <List
+      navigationTitle={title}
+      searchable={{
+        value: query,
+        onChanged: setQuery,
+        prompt: "键 / 值",
+        placement: "navigationBarDrawer",
+      }}
+    >
+      <Section header={<Text>{q ? `${shown.length} / ${section.lines.length} 行` : `${section.lines.length} 行`}</Text>}>
+        {shown.length === 0 ? (
+          <Text foregroundStyle="secondaryLabel">无匹配行</Text>
+        ) : (
+          shown.map((line, li) => <ProfileLineRow key={li} line={line} />)
+        )}
+      </Section>
+    </List>
+  )
 }
 
 function ProfileView() {
@@ -327,6 +481,7 @@ function ProfileView() {
   const [profile, setProfile] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sensitive, setSensitive] = useState(false)
+  const [query, setQuery] = useState("")
 
   useEffect(() => {
     setProfile(null)
@@ -336,13 +491,21 @@ function ProfileView() {
   }, [state.config, sensitive])
 
   const sections = profile ? parseProfileSections(profile) : []
+  const q = query.trim().toLowerCase()
+  const shown = q ? sections.filter((sec) => profileSectionMatches(sec, q)) : sections
 
   return (
     <List
       navigationTitle="当前配置"
       tabBarVisibility="visible"
+      searchable={{
+        value: query,
+        onChanged: setQuery,
+        prompt: "分段 / 键 / 值",
+        placement: "navigationBarDrawer",
+      }}
     >
-      <Section footer={<Text font={13}>显示敏感字段会再次向 Surge 拉取配置（含密码）。</Text>}>
+      <Section footer={<Text font={13}>显示敏感字段会再次向 Surge 拉取配置（含密码）。点按分段进入详情，避免一次画出整份配置。</Text>}>
         <Toggle title="显示敏感字段" value={sensitive} onChanged={setSensitive} />
       </Section>
       {error ? (
@@ -358,39 +521,21 @@ function ProfileView() {
           <Text foregroundStyle="secondaryLabel">配置为空</Text>
         </Section>
       ) : (
-        sections.map((sec, si) => (
-          <Section
-            key={`${sec.name}-${si}`}
-            header={sec.name ? <Text>{sec.name}</Text> : undefined}
-          >
-            {sec.lines.map((line, li) =>
-              line.kind === "kv" ? (
-                <VStack key={li} alignment="leading" spacing={4} padding={{ vertical: 4 }}>
-                  <Text font={13} fontWeight="medium" foregroundStyle="secondaryLabel">
-                    {line.key}
-                  </Text>
-                  <Text
-                    font={15}
-                    multilineTextAlignment="leading"
-                    frame={{ maxWidth: "infinity", alignment: "leading" }}
-                  >
-                    {formatProfileValue(line.value)}
-                  </Text>
-                </VStack>
-              ) : (
-                <Text
-                  key={li}
-                  font={14}
-                  foregroundStyle={isCommentLine(line.text) ? "secondaryLabel" : "label"}
-                  multilineTextAlignment="leading"
-                  frame={{ maxWidth: "infinity", alignment: "leading" }}
-                >
-                  {line.text}
-                </Text>
-              )
-            )}
-          </Section>
-        ))
+        <Section header={<Text>{q ? `${shown.length} / ${sections.length} 个分段` : `${sections.length} 个分段`}</Text>}>
+          {shown.length === 0 ? (
+            <Text foregroundStyle="secondaryLabel">无匹配分段</Text>
+          ) : (
+            shown.map((sec, si) => (
+              <NavigationLink key={`${sec.name}-${si}`} destination={<ProfileSectionView section={sec} initialQuery={q} />}>
+                <HStack>
+                  <Text frame={{ maxWidth: "infinity", alignment: "leading" }}>{sec.name || "未命名"}</Text>
+                  <Spacer />
+                  <Text font={13} foregroundStyle="secondaryLabel">{`${sec.lines.length} 行`}</Text>
+                </HStack>
+              </NavigationLink>
+            ))
+          )}
+        </Section>
       )}
     </List>
   )

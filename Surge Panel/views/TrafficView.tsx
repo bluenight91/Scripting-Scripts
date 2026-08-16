@@ -14,7 +14,7 @@ import { GradientBar } from "../components/GradientBar"
 import { PanelCard } from "../components/PanelCard"
 import { StatCard } from "../components/StatCard"
 import { refreshNow, useStore } from "../lib/store"
-import { formatBytes, formatSpeed, formatSpeedParts } from "../lib/metrics"
+import { formatBytes, formatSpeed, formatSpeedParts, ifaceDisplayName, isDirectPolicy } from "../lib/metrics"
 import { UI } from "../lib/ui"
 import type { TrafficEntry } from "../lib/surgeApi"
 
@@ -60,6 +60,17 @@ export function TrafficView() {
   const downParts = state.running ? formatSpeedParts(state.speeds.inSpeed) : null
   const upParts = state.running ? formatSpeedParts(state.speeds.outSpeed) : null
 
+  let directBytes = 0
+  let proxyBytes = 0
+  for (const [name, v] of connectors) {
+    const total = v.in + v.out
+    if (isDirectPolicy(name)) directBytes += total
+    else proxyBytes += total
+  }
+  const splitTotal = directBytes + proxyBytes
+  const directPct = splitTotal > 0 ? Math.round((directBytes / splitTotal) * 100) : 0
+  const proxyPct = splitTotal > 0 ? 100 - directPct : 0
+
   return (
     <ScrollView axes="vertical" refreshable={async () => { await refreshNow() }}>
       <VStack alignment="leading" spacing={UI.pageSpacing} padding={UI.pagePadding}>
@@ -83,6 +94,24 @@ export function TrafficView() {
           />
         </HStack>
 
+        {state.traffic ? (
+          <PanelCard>
+            <Text font={UI.titleFont} fontWeight="semibold">本次运行分流</Text>
+            <HStack spacing={16} padding={{ top: 4 }}>
+              <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+                <Text font={13} foregroundStyle="secondaryLabel">直连</Text>
+                <Text font={17} fontWeight="semibold">{formatBytes(directBytes)}</Text>
+                <Text font={UI.captionFont} foregroundStyle="tertiaryLabel">{`${directPct}%`}</Text>
+              </VStack>
+              <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+                <Text font={13} foregroundStyle="secondaryLabel">代理</Text>
+                <Text font={17} fontWeight="semibold">{formatBytes(proxyBytes)}</Text>
+                <Text font={UI.captionFont} foregroundStyle="tertiaryLabel">{`${proxyPct}%`}</Text>
+              </VStack>
+            </HStack>
+          </PanelCard>
+        ) : null}
+
         <Picker title="明细排序" pickerStyle="segmented" value={sortBy} onChanged={(v: string) => setSortBy(v as "current" | "total" | "peak")}>
           <Text tag="current">实时</Text>
           <Text tag="total">累计</Text>
@@ -101,12 +130,14 @@ export function TrafficView() {
           {interfaces.length === 0 ? (
             <Text font={13} foregroundStyle="secondaryLabel">暂无接口数据</Text>
           ) : (
-            interfaces.map(([name, v]) => (
+            interfaces.map(([name, v]) => {
+              const ifaceLabel = ifaceDisplayName(name)
+              return (
               <HStack key={name} spacing={10} padding={{ vertical: 2 }}>
                 <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
                   <Text font={15} lineLimit={1} minScaleFactor={0.7}>{name}</Text>
                   <Text font={UI.captionFont} foregroundStyle="secondaryLabel">
-                    {`累计 ↓${formatBytes(v.in)}  ↑${formatBytes(v.out)} · 峰值 ↓${formatSpeed(v.inMaxSpeed)} ↑${formatSpeed(v.outMaxSpeed)}`}
+                    {`${ifaceLabel ? `${ifaceLabel} · ` : ""}累计 ↓${formatBytes(v.in)}  ↑${formatBytes(v.out)} · 峰值 ↓${formatSpeed(v.inMaxSpeed)} ↑${formatSpeed(v.outMaxSpeed)}`}
                   </Text>
                 </VStack>
                 <HStack spacing={4}>
@@ -118,7 +149,8 @@ export function TrafficView() {
                   <Text font={13} foregroundStyle="secondaryLabel">{formatSpeed(v.outCurrentSpeed)}</Text>
                 </HStack>
               </HStack>
-            ))
+              )
+            })
           )}
         </PanelCard>
 

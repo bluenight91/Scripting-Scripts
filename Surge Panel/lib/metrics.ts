@@ -185,3 +185,73 @@ export function formatEventTime(s: string): string {
   const hm = `${p(d.getHours())}:${p(d.getMinutes())}`
   return sameDay ? hm : `${d.getMonth() + 1}-${d.getDate()} ${hm}`
 }
+
+/** 策略名是否为直连（含 DIRECT / 直连） */
+export function isDirectPolicy(name: string): boolean {
+  return /(^|[\s/])DIRECT(?:$|[-_\s/])|^DIRECT$|直连/i.test(name.trim())
+}
+
+export function isRejectPolicy(name: string | undefined | null): boolean {
+  return /REJECT/i.test(name ?? "")
+}
+
+/** 系统网卡名的可读说明；无法识别则返回 null */
+export function ifaceDisplayName(name: string): string | null {
+  if (name === "lo0" || name === "lo") return "回环"
+  if (/^pdp_ip/i.test(name)) return "蜂窝"
+  if (/^en\d+$/i.test(name)) return "Wi-Fi"
+  if (/^utun/i.test(name)) return "隧道"
+  if (/^awdl/i.test(name)) return "隔空投送"
+  return null
+}
+
+/** Surge Fake-IP：198.18.0.0/15 与 fd00:6152::/32 */
+export function isFakeIp(addr: string): boolean {
+  const s = addr.trim().toLowerCase()
+  if (/^198\.(18|19)(?:\.\d{1,3}){2}$/.test(s)) return true
+  if (s === "fd00:6152::" || s.startsWith("fd00:6152:") || s.startsWith("fd00:6152::")) return true
+  return false
+}
+
+export function collectRecordAddresses(entries: { data?: unknown }[] | undefined | null): string[] {
+  if (!Array.isArray(entries)) return []
+  const out: string[] = []
+  for (const e of entries) {
+    const d = e.data
+    if (Array.isArray(d)) {
+      for (const x of d) if (x != null && String(x).length > 0) out.push(String(x))
+    } else if (typeof d === "string" && d.length > 0) {
+      out.push(d)
+    }
+  }
+  return out
+}
+
+export function countFakeIps(addrs: string[]): number {
+  const seen = new Set<string>()
+  for (const a of addrs) {
+    const t = a.trim()
+    if (isFakeIp(t)) seen.add(t.toLowerCase())
+  }
+  return seen.size
+}
+
+export function parsePrimaryAddresses(raw: unknown): { ipv4?: string; ipv6?: string } {
+  let value: unknown = raw
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value)
+    } catch {
+      return {}
+    }
+  }
+  if (!value || typeof value !== "object") return {}
+  const o = value as Record<string, unknown>
+  const inner = o.result ?? o.output ?? o.value ?? o.data ?? o
+  const rec = inner && typeof inner === "object" && !Array.isArray(inner) ? (inner as Record<string, unknown>) : o
+  const v4 = rec.v4 && typeof rec.v4 === "object" ? (rec.v4 as Record<string, unknown>) : null
+  const v6 = rec.v6 && typeof rec.v6 === "object" ? (rec.v6 as Record<string, unknown>) : null
+  const ipv4 = typeof v4?.primaryAddress === "string" && v4.primaryAddress ? v4.primaryAddress : undefined
+  const ipv6 = typeof v6?.primaryAddress === "string" && v6.primaryAddress ? v6.primaryAddress : undefined
+  return { ipv4, ipv6 }
+}

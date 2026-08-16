@@ -22,12 +22,23 @@ function allowInsecure(_c: SurgeConfig): boolean {
   return true
 }
 
+function httpStatusError(status: number): Error {
+  if (status === 401) return new Error("Key 无效")
+  return new Error(`HTTP ${status}`)
+}
+
 function wrapFetchError(e: unknown): Error {
   const s = String(e)
   if (/TLS|TlsHandler|证书|certificate/i.test(s)) {
     return new Error(
       `${s}。Surge HTTPS API 使用 MITM 自签证书。可改用 http（默认 http-api-tls = false），或确认 Scripting 已允许本地网络。`
     )
+  }
+  if (/401|unauthorized/i.test(s)) {
+    return new Error("Key 无效")
+  }
+  if (/timeout|timed?\s*out|ETIMEDOUT|超时/i.test(s)) {
+    return new Error("连接超时。请确认 HTTP API 已开启，并允许 Scripting 访问本地网络")
   }
   return e instanceof Error ? e : new Error(s)
 }
@@ -58,7 +69,7 @@ async function request<T>(
     throw wrapFetchError(e)
   })
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}${res.status === 401 ? "（Key 无效）" : ""}`)
+    throw httpStatusError(res.status)
   }
   const text = await res.text()
   if (!text || text === "OK") return undefined as T
@@ -85,7 +96,7 @@ export async function fetchMetrics(c: SurgeConfig): Promise<MetricSample[] | nul
     throw wrapFetchError(e)
   })
   if (res.status === 404 || res.status === 405 || res.status === 501) return null
-  if (!res.ok) throw new Error(`HTTP ${res.status}${res.status === 401 ? "（Key 无效）" : ""}`)
+  if (!res.ok) throw httpStatusError(res.status)
   const text = (await res.text()).trim()
   if (!text || text.startsWith("{") || text.startsWith("[")) return null
   const samples = parsePrometheus(text)
@@ -163,7 +174,7 @@ export type DnsEntry = {
   domain: string
   server?: string | null
   interface?: string
-  data?: string[] | null
+  data?: string | string[] | null
   logs?: string[]
   path?: string
   timeCost?: number
@@ -264,7 +275,7 @@ export async function probeOutbound(c: SurgeConfig): Promise<ProbeResult> {
   })
   const latencyMs = Date.now() - t0
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}${res.status === 401 ? "（Key 无效）" : ""}`)
+    throw httpStatusError(res.status)
   }
   let mode: OutboundMode | undefined
   try {
