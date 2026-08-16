@@ -14,6 +14,7 @@ import {
   VStack,
 } from "scripting"
 import {
+  evaluateScript,
   formatProfileValue,
   getCurrentProfile,
   getFeature,
@@ -32,6 +33,7 @@ import {
   FEATURE_LABELS,
   type FeatureKey,
 } from "../lib/surgeApi"
+import { parsePrimaryAddresses } from "../lib/metrics"
 import { ChangelogView } from "../components/ReleaseNotesSheet"
 import { clearHistory, needsSetup, savePrefs, useStore } from "../lib/store"
 import { ScriptsView } from "./ScriptsView"
@@ -61,6 +63,7 @@ export function SettingsView() {
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   // 日志级别（API 无读取端点，仅展示默认；修改立即生效）
   const [logLevel, setLogLevel] = useState("notify")
+  const [localAddrText, setLocalAddrText] = useState("")
 
   async function loadEngineState() {
     if (needsSetup()) {
@@ -70,8 +73,17 @@ export function SettingsView() {
       setFeatures(null)
       setModules(null)
       setEngineError(null)
+      setLocalAddrText("")
       return
     }
+    evaluateScript(state.config, "$done($network)", "generic", 3)
+      .then((raw) => {
+        const addrs = parsePrimaryAddresses(raw)
+        setLocalAddrText([addrs.ipv4, addrs.ipv6].filter(Boolean).join(" / "))
+      })
+      .catch(() => {
+        setLocalAddrText("")
+      })
     try {
       const [ob, m, f] = await Promise.all([
         getOutboundMode(state.config),
@@ -210,7 +222,7 @@ export function SettingsView() {
       }}
     >
       {/* 实例 */}
-      <Section header={<Text>实例</Text>} footer={<Text font={13}>{needsSetup() ? "还没有可连接的实例。先添加本机或网关 HTTP API 并填写 Key。" : `可添加本机与网关等多个 Surge HTTP API，点按切换。当前：${state.instances.find((i) => i.id === state.activeId)?.name ?? "—"}（${state.config.host}:${state.config.port}）`}</Text>}>
+      <Section header={<Text>实例</Text>} footer={<Text font={13}>{needsSetup() ? "还没有可连接的实例。先添加本机或网关 HTTP API 并填写 Key。" : `可添加本机与网关等多个 Surge HTTP API，点按切换。当前：${state.instances.find((i) => i.id === state.activeId)?.name ?? "—"}（${state.config.host}:${state.config.port}）${localAddrText ? ` · ${localAddrText}` : ""}`}</Text>}>
         <NavigationLink title="管理实例" destination={<InstancesView />} />
       </Section>
 
