@@ -47,18 +47,15 @@ export function StatCard({
         ) : null}
       </HStack>
       {subtitle || badge ? (
-        <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-          {subtitle ? (
-            <Text font={UI.captionFont} foregroundStyle="secondaryLabel" lineLimit={2} minScaleFactor={0.75}>
-              {subtitle}
-            </Text>
-          ) : null}
-          {badge ? (
-            <Text font={UI.captionFont} fontWeight="medium" foregroundStyle="systemRed" lineLimit={2} minScaleFactor={0.75}>
-              {badge}
-            </Text>
-          ) : null}
-        </VStack>
+        <Text
+          font={UI.captionFont}
+          fontWeight={badge ? "medium" : "regular"}
+          foregroundStyle={badge ? "systemRed" : "secondaryLabel"}
+          lineLimit={1}
+          minScaleFactor={0.7}
+        >
+          {badge ?? subtitle}
+        </Text>
       ) : null}
     </VStack>
   )

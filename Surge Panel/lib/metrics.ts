@@ -384,7 +384,55 @@ export function formatMemSlope(mbPerMin: number): string {
   return `${sign}${mbPerMin.toFixed(1)} MB/分`
 }
 
-export function analyzeMemoryTrend(history: MemoryPoint[]): {
+export type MemRangeMin = 2 | 60 | 360 | 720 | 1440
+
+export const MEM_RANGE_OPTIONS: { tag: string; minutes: MemRangeMin; label: string }[] = [
+  { tag: "2", minutes: 2, label: "2 分钟" },
+  { tag: "60", minutes: 60, label: "1 小时" },
+  { tag: "360", minutes: 360, label: "6 小时" },
+  { tag: "720", minutes: 720, label: "12 小时" },
+  { tag: "1440", minutes: 1440, label: "24 小时" },
+]
+
+export function downsampleToMinute(pts: MemoryPoint[]): MemoryPoint[] {
+  const out: MemoryPoint[] = []
+  for (const p of pts) {
+    if (!(p.mem > 0)) continue
+    const last = out[out.length - 1]
+    if (!last || p.t - last.t >= 50_000) out.push({ t: p.t, mem: p.mem })
+    else last.mem = p.mem
+  }
+  return out
+}
+
+export function appendMinuteSample(
+  series: MemoryPoint[],
+  point: MemoryPoint,
+  retainMs = 25 * 60 * 60 * 1000
+): MemoryPoint[] {
+  const next = downsampleToMinute([...series, point])
+  const cut = point.t - retainMs
+  return next.filter((p) => p.t >= cut)
+}
+
+export function historyForRange(
+  highRes: MemoryPoint[],
+  longMem: MemoryPoint[],
+  rangeMs: number,
+  now = Date.now()
+): MemoryPoint[] {
+  const cut = now - rangeMs
+  const recent = highRes.filter((p) => p.t >= cut && p.mem > 0)
+  if (rangeMs <= 2.5 * 60 * 1000) return recent
+  const t0 = recent[0]?.t ?? now + 1
+  const older = longMem.filter((p) => p.t >= cut && p.t < t0 && p.mem > 0)
+  return [...older, ...recent]
+}
+
+export function analyzeMemoryTrend(
+  history: MemoryPoint[],
+  opts?: { recentMs?: number }
+): {
   level: "ok" | "warning" | "insufficient"
   message: string
   peakMB: number
@@ -418,7 +466,8 @@ export function analyzeMemoryTrend(history: MemoryPoint[]): {
     }
   }
   const lastT = pts[pts.length - 1].t
-  let recent = pts.filter((p) => lastT - p.t <= RECENT_MEM_MS)
+  const recentMs = opts?.recentMs ?? RECENT_MEM_MS
+  let recent = pts.filter((p) => lastT - p.t <= recentMs)
   if (recent.length < 12) recent = pts.slice(-Math.min(pts.length, 24))
   const mems = pts.map((p) => p.mem)
   const peakMB = Math.max(...mems) / (1024 * 1024)
@@ -452,7 +501,7 @@ export function analyzeMemoryTrend(history: MemoryPoint[]): {
   }
   return {
     level: "ok",
-    message: `近 ${Math.max(1, Math.round(windowMin))} 分钟变化 ${formatMemSlope(slopeMBPerMin)}；全程振幅 ${rangeMB.toFixed(1)} MB，属正常波动。`,
+    message: `近 ${Math.max(1, Math.round(windowMin))} 分钟变化 ${formatMemSlope(slopeMBPerMin)}；所选范围振幅 ${rangeMB.toFixed(1)} MB，属正常波动。`,
     ...stats,
   }
 }

@@ -22,6 +22,10 @@ export function historyKey(id: string): string {
   return `surge_panel_history:${id}`
 }
 
+export function memLongKey(id: string): string {
+  return `surge_panel_mem_long:${id}`
+}
+
 export function newInstanceId(): string {
   return `i${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 }
