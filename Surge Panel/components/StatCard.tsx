@@ -1,5 +1,5 @@
 // 圆角统计卡片
-import { HStack, Image, Spacer, Text, VStack, type Color, type VirtualNode } from "scripting"
+import { HStack, Image, Text, VStack, type Color, type VirtualNode } from "scripting"
 import { UI, cardBackground } from "../lib/ui"
 
 export function StatCard({
@@ -47,19 +47,18 @@ export function StatCard({
         ) : null}
       </HStack>
       {subtitle || badge ? (
-        <HStack spacing={6}>
+        <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
           {subtitle ? (
-            <Text font={UI.captionFont} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.8}>
+            <Text font={UI.captionFont} foregroundStyle="secondaryLabel" lineLimit={2} minScaleFactor={0.75}>
               {subtitle}
             </Text>
           ) : null}
-          <Spacer />
           {badge ? (
-            <Text font={UI.captionFont} fontWeight="medium" foregroundStyle="systemRed" lineLimit={1}>
+            <Text font={UI.captionFont} fontWeight="medium" foregroundStyle="systemRed" lineLimit={2} minScaleFactor={0.75}>
               {badge}
             </Text>
           ) : null}
-        </HStack>
+        </VStack>
       ) : null}
     </VStack>
   )

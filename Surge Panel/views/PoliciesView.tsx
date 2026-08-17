@@ -8,6 +8,7 @@ import {
   ProgressView,
   Script,
   Section,
+  Spacer,
   Text,
   TextField,
   useEffect,
@@ -30,16 +31,50 @@ import {
   type PolicyBenchmarkResult,
   type PolicyOption,
 } from "../lib/surgeApi"
-import { formatDelay } from "../lib/metrics"
+import { formatDelay, latencyForeground, pickBenchmark, resolvePolicyLatency, testResultScore, type LatencyStatus } from "../lib/metrics"
 import { useStore } from "../lib/store"
 import { useTabAutoRefresh } from "../lib/liveCache"
 import { connectErrorText } from "../lib/ui"
+
+function DelayLabel({
+  status,
+  ms,
+  showNone = false,
+}: {
+  status: LatencyStatus
+  ms?: number
+  showNone?: boolean
+}) {
+  if (status === "testing") return <ProgressView />
+  if (status === "fail") {
+    return (
+      <Text font={13} foregroundStyle="systemRed">
+        失败
+      </Text>
+    )
+  }
+  if (status === "ms" && ms != null) {
+    return (
+      <Text font={13} foregroundStyle={latencyForeground(ms)}>
+        {formatDelay(ms)}
+      </Text>
+    )
+  }
+  if (!showNone) return null
+  return (
+    <Text font={13} foregroundStyle="tertiaryLabel">
+      未测速
+    </Text>
+  )
+}
 
 export function PoliciesView() {
   const state = useStore()
   const [groups, setGroups] = useState<Record<string, PolicyOption[]> | null>(null)
   const [groupOrder, setGroupOrder] = useState<string[]>([])
   const [selections, setSelections] = useState<Record<string, string>>({})
+  const [benchmarks, setBenchmarks] = useState<Record<string, PolicyBenchmarkResult> | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, unknown> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState("")
@@ -48,8 +83,14 @@ export function PoliciesView() {
     setLoading(true)
     setError(null)
     try {
-      const g = await getPolicyGroups(state.config)
+      const [g, bm, tr] = await Promise.all([
+        getPolicyGroups(state.config),
+        getPolicyBenchmarks(state.config).catch(() => ({}) as Record<string, PolicyBenchmarkResult>),
+        getGroupTestResults(state.config).catch(() => ({}) as Record<string, unknown>),
+      ])
       setGroups(g)
+      setBenchmarks(bm ?? {})
+      setTestResults(tr ?? {})
       const apiNames = Object.keys(g)
       try {
         const raw = await getCurrentProfile(state.config)
@@ -113,6 +154,11 @@ export function PoliciesView() {
             filtered.map((name) => {
             const options = groups[name]
             const selected = selections[name]
+            const selectedOpt = selected ? options.find((o) => o.name === selected) : undefined
+            const lat = resolvePolicyLatency({
+              benchmark: pickBenchmark(benchmarks, selectedOpt ?? { name: selected ?? "" }),
+              testScore: selected ? testResultScore(testResults, name, selected) : undefined,
+            })
             return (
               <NavigationLink
                 key={name}
@@ -121,6 +167,8 @@ export function PoliciesView() {
                     groupName={name}
                     options={options}
                     initialSelection={selected ?? null}
+                    initialBenchmarks={benchmarks}
+                    initialTestResults={testResults}
                     onChanged={() => {
                       getPolicyGroupSelection(state.config, name)
                         .then((r) => setSelections((s) => ({ ...s, [name]: r.policy })))
@@ -129,12 +177,16 @@ export function PoliciesView() {
                   />
                 }
               >
-                <VStack alignment="leading" spacing={3}>
-                  <Text font={17} lineLimit={1} minScaleFactor={0.8}>{name}</Text>
-                  <Text font={13} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.8}>
-                    {selected ?? `${options.length} 个选项`}
-                  </Text>
-                </VStack>
+                <HStack>
+                  <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+                    <Text font={17} lineLimit={1} minScaleFactor={0.8}>{name}</Text>
+                    <Text font={13} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.8}>
+                      {selected ?? `${options.length} 个选项`}
+                    </Text>
+                  </VStack>
+                  <Spacer />
+                  <DelayLabel status={lat.status} ms={lat.ms} />
+                </HStack>
               </NavigationLink>
             )
           })
@@ -186,11 +238,15 @@ export function GroupDetailView({
   groupName,
   options,
   initialSelection,
+  initialBenchmarks = null,
+  initialTestResults = null,
   onChanged,
 }: {
   groupName: string
   options: PolicyOption[]
   initialSelection: string | null
+  initialBenchmarks?: Record<string, PolicyBenchmarkResult> | null
+  initialTestResults?: Record<string, unknown> | null
   onChanged: () => void
 }) {
   const state = useStore()
@@ -207,11 +263,12 @@ export function GroupDetailView({
   const [testProgress, setTestProgress] = useState("")
   const [selecting, setSelecting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // Surge 基准测试缓存（按 lineHash），覆盖所有节点含内嵌/链式
+  // Surge 基准测试缓存（按 lineHash / 策略名），覆盖所有节点含内嵌/链式
   const [benchmarks, setBenchmarks] = useState<Record<
     string,
     PolicyBenchmarkResult
-  > | null>(null)
+  > | null>(initialBenchmarks)
+  const [groupTests, setGroupTests] = useState<Record<string, unknown> | null>(initialTestResults)
 
   function refreshBenchmarks() {
     return getPolicyBenchmarks(state.config)
@@ -246,6 +303,7 @@ export function GroupDetailView({
     getGroupTestResults(state.config)
       .then((r) => {
         if (cancelled) return
+        setGroupTests(r ?? {})
         const keys = Object.keys(r ?? {})
         setAutoGroup(keys.includes(groupName))
         const cur = r?.[groupName]
@@ -340,6 +398,9 @@ export function GroupDetailView({
     await Promise.all([groupTest, latencyTest])
     // 组测速完成后 Surge 会更新基准测试缓存，重新拉取以刷新所有节点的延迟显示
     await refreshBenchmarks()
+    await getGroupTestResults(state.config)
+      .then((r) => setGroupTests(r ?? {}))
+      .catch(() => {})
     setTestProgress("")
     setTesting(false)
   }
@@ -358,7 +419,7 @@ export function GroupDetailView({
               ? testProgress || "测速中…"
               : autoGroup === false
               ? "点按节点即可切换。延迟来自 Surge 基准测试缓存（含内嵌/链式节点，由 Surge 后台定期自动更新）；手动选择组不支持面板内组测速"
-              : "点按节点即可切换。延迟来自 Surge 基准测试缓存；「全部测速」触发 Surge 对本组重新基准测试，绿色「最优」为当选节点"}
+              : "点按节点即可切换。延迟来自 Surge 基准测试缓存与组测速结果；「全部测速」会刷新本组。绿色「最优」为自动组当选节点"}
           </Text>
         }
       >
@@ -376,10 +437,11 @@ export function GroupDetailView({
           const electedList = elected ?? autoElected
           const isElected =
             autoGroup === true && (electedList?.includes(o.name) ?? false)
-          const bm = o.isGroup ? undefined : benchmarks?.[o.lineHash]
-          const bmScore = bm?.lastTestScoreInMS
-          const bmFailed =
-            bm != null && bmScore === 0 && bm.lastTestErrorMessage != null
+          const lat = resolvePolicyLatency({
+            live: delay,
+            benchmark: pickBenchmark(benchmarks, o),
+            testScore: testResultScore(groupTests, groupName, o.name),
+          })
           return (
             <HStack
               key={o.lineHash}
@@ -397,31 +459,14 @@ export function GroupDetailView({
               </VStack>
               {selecting === o.name ? (
                 <ProgressView />
-              ) : isElected ? (
-                <Text font={13} foregroundStyle="systemGreen">最优</Text>
-              ) : delay !== undefined ? (
-                <Text
-                  font={13}
-                  foregroundStyle={
-                    delay === null ? "systemRed" : delay < 300 ? "systemGreen" : delay < 800 ? "systemOrange" : "systemRed"
-                  }
-                >
-                  {delay === null ? "失败" : formatDelay(delay)}
-                </Text>
-              ) : bm?.testing ? (
-                <ProgressView />
-              ) : bmScore !== undefined && bmScore > 0 ? (
-                <Text
-                  font={13}
-                  foregroundStyle={
-                    bmScore < 300 ? "systemGreen" : bmScore < 800 ? "systemOrange" : "systemRed"
-                  }
-                >
-                  {formatDelay(bmScore)}
-                </Text>
-              ) : bmFailed ? (
-                <Text font={13} foregroundStyle="systemRed">失败</Text>
-              ) : null}
+              ) : (
+                <VStack alignment="trailing" spacing={2}>
+                  {isElected ? (
+                    <Text font={12} foregroundStyle="systemGreen">最优</Text>
+                  ) : null}
+                  <DelayLabel status={lat.status} ms={lat.ms} showNone={!o.isGroup} />
+                </VStack>
+              )}
               {isSelected ? (
                 <Image systemName="checkmark.circle.fill" foregroundStyle="systemBlue" font={18} />
               ) : null}

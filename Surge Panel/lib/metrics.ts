@@ -166,6 +166,70 @@ export function formatDelay(ms: number | undefined | null): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`
 }
 
+export type LatencyBenchmark = {
+  lastTestErrorMessage?: string | null
+  lastTestScoreInMS?: number
+  testing?: number | boolean
+}
+
+export type LatencyStatus = "testing" | "fail" | "ms" | "none"
+
+export function latencyForeground(ms: number): "systemGreen" | "systemOrange" | "systemRed" {
+  return ms < 300 ? "systemGreen" : ms < 800 ? "systemOrange" : "systemRed"
+}
+
+function plausibleLatencyMs(n: number): boolean {
+  return Number.isFinite(n) && n > 0 && n < 60000
+}
+
+export function resolvePolicyLatency(args: {
+  live?: number | null
+  benchmark?: LatencyBenchmark | null
+  testScore?: number | null
+}): { status: LatencyStatus; ms?: number } {
+  if (args.live === null) return { status: "fail" }
+  if (typeof args.live === "number" && Number.isFinite(args.live)) {
+    return args.live > 0 ? { status: "ms", ms: args.live } : { status: "fail" }
+  }
+  const bm = args.benchmark
+  if (bm?.testing === 1 || bm?.testing === true) return { status: "testing" }
+  if (typeof bm?.lastTestScoreInMS === "number" && bm.lastTestScoreInMS > 0) {
+    return { status: "ms", ms: bm.lastTestScoreInMS }
+  }
+  if (bm && bm.lastTestScoreInMS === 0 && bm.lastTestErrorMessage) return { status: "fail" }
+  if (typeof args.testScore === "number" && plausibleLatencyMs(args.testScore)) {
+    return { status: "ms", ms: args.testScore }
+  }
+  return { status: "none" }
+}
+
+export function pickBenchmark(
+  map: Record<string, LatencyBenchmark> | null | undefined,
+  option: { lineHash?: string; name: string }
+): LatencyBenchmark | undefined {
+  if (!map) return undefined
+  if (option.lineHash && map[option.lineHash]) return map[option.lineHash]
+  if (map[option.name]) return map[option.name]
+  return undefined
+}
+
+export function testResultScore(results: unknown, groupName: string, policyName: string): number | undefined {
+  if (!results || typeof results !== "object") return undefined
+  const cur = (results as Record<string, unknown>)[groupName]
+  if (!Array.isArray(cur)) return undefined
+  for (const v of cur) {
+    if (!v || typeof v !== "object" || Array.isArray(v)) continue
+    const rec = v as Record<string, unknown>
+    const name = String(rec.policy ?? rec.name ?? "")
+    if (name !== policyName) continue
+    for (const key of ["score", "available-total", "tcp", "receive"]) {
+      const n = Number(rec[key])
+      if (plausibleLatencyMs(n)) return n
+    }
+  }
+  return undefined
+}
+
 /** 解析 Surge 事件的日期字符串（如 "2026-08-13T14:00:00+0800"） */
 export function parseSurgeDate(s: string): Date | null {
   const normalized = s.replace(/([+-]\d{2})(\d{2})$/, "$1:$2")
@@ -283,4 +347,112 @@ export function parsePrimaryAddresses(raw: unknown): { ipv4?: string; ipv6?: str
   const ipv4 = typeof v4?.primaryAddress === "string" && v4.primaryAddress ? v4.primaryAddress : undefined
   const ipv6 = typeof v6?.primaryAddress === "string" && v6.primaryAddress ? v6.primaryAddress : undefined
   return { ipv4, ipv6 }
+}
+
+export type MemoryPoint = { t: number; mem: number }
+
+const RECENT_MEM_MS = 20 * 60 * 1000
+
+/** 对 mem(MB) ~ 时间(分钟) 做最小二乘斜率 */
+export function memorySlopeMBPerMin(pts: MemoryPoint[]): number {
+  if (pts.length < 2) return 0
+  const t0 = pts[0].t
+  const n = pts.length
+  let sumX = 0
+  let sumY = 0
+  let sumXY = 0
+  let sumXX = 0
+  for (const p of pts) {
+    const x = (p.t - t0) / 60000
+    const y = p.mem / (1024 * 1024)
+    sumX += x
+    sumY += y
+    sumXY += x * y
+    sumXX += x * x
+  }
+  const denom = n * sumXX - sumX * sumX
+  if (!Number.isFinite(denom) || Math.abs(denom) < 1e-12) return 0
+  const slope = (n * sumXY - sumX * sumY) / denom
+  return Number.isFinite(slope) ? slope : 0
+}
+
+export function formatMemSlope(mbPerMin: number): string {
+  const abs = Math.abs(mbPerMin)
+  if (!Number.isFinite(mbPerMin) || abs < 0.005) return "≈ 0"
+  const sign = mbPerMin > 0 ? "+" : ""
+  if (abs < 1) return `${sign}${mbPerMin.toFixed(2)} MB/分`
+  return `${sign}${mbPerMin.toFixed(1)} MB/分`
+}
+
+export function analyzeMemoryTrend(history: MemoryPoint[]): {
+  level: "ok" | "warning" | "insufficient"
+  message: string
+  peakMB: number
+  minMB: number
+  currentMB: number
+  rangeMB: number
+  slopeMBPerMin: number
+  windowMin: number
+  historyMin: number
+  samples: number
+} {
+  const empty = {
+    peakMB: 0,
+    minMB: 0,
+    currentMB: 0,
+    rangeMB: 0,
+    slopeMBPerMin: 0,
+    windowMin: 0,
+    historyMin: 0,
+    samples: 0,
+  }
+  const pts = history.filter((p) => p.mem > 0)
+  if (pts.length < 12) {
+    return {
+      level: "insufficient",
+      message: "采样数据不足，持续运行约 1 分钟后再查看趋势判断。",
+      ...empty,
+      samples: pts.length,
+      currentMB: pts.length ? pts[pts.length - 1].mem / (1024 * 1024) : 0,
+      historyMin: pts.length >= 2 ? (pts[pts.length - 1].t - pts[0].t) / 60000 : 0,
+    }
+  }
+  const lastT = pts[pts.length - 1].t
+  let recent = pts.filter((p) => lastT - p.t <= RECENT_MEM_MS)
+  if (recent.length < 12) recent = pts.slice(-Math.min(pts.length, 24))
+  const mems = pts.map((p) => p.mem)
+  const peakMB = Math.max(...mems) / (1024 * 1024)
+  const minMB = Math.min(...mems) / (1024 * 1024)
+  const currentMB = mems[mems.length - 1] / (1024 * 1024)
+  const rangeMB = Math.max(0, peakMB - minMB)
+  const slopeMBPerMin = memorySlopeMBPerMin(recent)
+  const windowMin = recent.length >= 2 ? (recent[recent.length - 1].t - recent[0].t) / 60000 : 0
+  const historyMin = (pts[pts.length - 1].t - pts[0].t) / 60000
+  let rising = 0
+  for (let i = 1; i < recent.length; i++) {
+    if (recent[i].mem >= recent[i - 1].mem) rising++
+  }
+  const risingRatio = recent.length > 1 ? rising / (recent.length - 1) : 0
+  const stats = {
+    peakMB,
+    minMB,
+    currentMB,
+    rangeMB,
+    slopeMBPerMin,
+    windowMin,
+    historyMin,
+    samples: pts.length,
+  }
+  if (slopeMBPerMin > 0.5 && risingRatio > 0.85) {
+    return {
+      level: "warning",
+      message: `近 ${Math.max(1, Math.round(windowMin))} 分钟内存持续上涨且不回落（约 ${formatMemSlope(slopeMBPerMin)}），可能存在泄漏。可尝试重新加载配置，或到「请求 → 事件」查看脚本报错。`,
+      ...stats,
+    }
+  }
+  return {
+    level: "ok",
+    message: `近 ${Math.max(1, Math.round(windowMin))} 分钟变化 ${formatMemSlope(slopeMBPerMin)}；全程振幅 ${rangeMB.toFixed(1)} MB，属正常波动。`,
+    ...stats,
+  }
 }

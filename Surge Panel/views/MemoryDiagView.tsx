@@ -15,9 +15,9 @@ import {
   VStack,
 } from "scripting"
 import { PanelCard } from "../components/PanelCard"
-import { analyzeMemoryTrend, openRequestsSegment, useStore } from "../lib/store"
+import { openRequestsSegment, useStore } from "../lib/store"
 import { reloadProfile } from "../lib/surgeApi"
-import { formatBytes, gaugeValue } from "../lib/metrics"
+import { analyzeMemoryTrend, formatBytes, formatMemSlope, gaugeValue } from "../lib/metrics"
 import { METRICS_HINT, UI } from "../lib/ui"
 import { downsample } from "./OverviewView"
 
@@ -77,7 +77,9 @@ export function MemoryDiagView() {
               <Text font={UI.titleFont} fontWeight="semibold">内存占用历史</Text>
               <Spacer />
               <Text font={UI.captionFont} foregroundStyle="secondaryLabel">
-                {trend.windowMin > 0 ? `近 ${Math.max(1, Math.round(trend.windowMin))} 分钟` : "采样中"}
+                {trend.historyMin > 0
+                  ? `近 ${Math.max(1, Math.round(trend.historyMin))} 分钟 · ${trend.samples} 点`
+                  : "采样中"}
               </Text>
             </HStack>
             {marks.length >= 2 ? (
@@ -113,10 +115,16 @@ export function MemoryDiagView() {
             <HStack spacing={0}>
               <DiagItem
                 label="变化速率"
-                value={trend.samples >= 12 ? `${trend.slopeMBPerMin >= 0 ? "+" : ""}${trend.slopeMBPerMin.toFixed(1)} MB/分` : "—"}
+                value={trend.samples >= 12 ? formatMemSlope(trend.slopeMBPerMin) : "—"}
               />
-              <DiagItem label="窗口" value={trend.windowMin > 0 ? `${Math.max(1, Math.round(trend.windowMin))} 分钟` : "—"} />
-              <DiagItem label="采样点" value={String(state.history.length)} />
+              <DiagItem
+                label="振幅"
+                value={trend.rangeMB > 0 ? `${trend.rangeMB.toFixed(1)} MB` : trend.samples >= 12 ? "≈ 0" : "—"}
+              />
+              <DiagItem
+                label="速率窗口"
+                value={trend.windowMin > 0 ? `${Math.max(1, Math.round(trend.windowMin))} 分钟` : "—"}
+              />
             </HStack>
           </PanelCard>
 
