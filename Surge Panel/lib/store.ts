@@ -8,10 +8,11 @@ import {
   type TrafficEntry,
   type TrafficSnapshot,
 } from "./surgeApi"
-import { gaugeValue, isRejectPolicy, type MetricSample } from "./metrics"
+import { appendMinuteSample, downsampleToMinute, gaugeValue, isRejectPolicy, type MetricSample, type MemoryPoint, type MemRangeMin } from "./metrics"
 import {
   findInstance,
   historyKey,
+  memLongKey,
   instanceIsReady,
   instanceToConfig,
   loadInstanceState,
@@ -39,6 +40,8 @@ export type Prefs = {
   maxPoints: 180 | 360 | 720
   /** 总览隐藏实例地址与本机 IP，方便截图分享 */
   hideAddresses: boolean
+  /** 内存诊断查看范围（分钟） */
+  memRangeMin: MemRangeMin
 }
 
 export type RequestsSegment = "active" | "recent" | "events" | "dns" | "rules"
@@ -58,6 +61,7 @@ export type StoreState = {
   failedRecent: number
   rejectedRecent: number
   history: HistoryPoint[]
+  memLong: MemoryPoint[]
   speedHistory: SpeedPoint[]
   traffic: TrafficSnapshot | null
   /** null=未知；true=有 /metrics；false=商店版等无该端点，总览走 HTTP API 回退 */
@@ -67,7 +71,13 @@ export type StoreState = {
 }
 
 const PREFS_KEY = "surge_panel_prefs"
-const DEFAULT_PREFS: Prefs = { autoRefresh: true, intervalSec: 5, maxPoints: 720, hideAddresses: false }
+const DEFAULT_PREFS: Prefs = {
+  autoRefresh: true,
+  intervalSec: 5,
+  maxPoints: 720,
+  hideAddresses: false,
+  memRangeMin: 60,
+}
 
 function readPrefs(): Prefs {
   const saved = Storage.get(PREFS_KEY) as Partial<Prefs> | null
@@ -104,9 +114,22 @@ function writeHistory(id: string, history: HistoryPoint[]) {
   Storage.set(historyKey(id), history)
 }
 
+function readMemLong(id: string, seed?: HistoryPoint[]): MemoryPoint[] {
+  const raw = Storage.get(memLongKey(id))
+  if (Array.isArray(raw) && raw.length > 0) return raw as MemoryPoint[]
+  const seeded = seed ? downsampleToMinute(seed) : []
+  if (id && seeded.length) Storage.set(memLongKey(id), seeded)
+  return seeded
+}
+
+function writeMemLong(id: string, series: MemoryPoint[]) {
+  Storage.set(memLongKey(id), series)
+}
+
 const boot = loadInstanceState()
 const bootInst = findInstance(boot.instances, boot.activeId) ?? EMPTY_INSTANCE
 const bootHistory = boot.activeId ? readHistory(boot.activeId) : []
+const bootMemLong = boot.activeId ? readMemLong(boot.activeId, bootHistory) : []
 
 let state: StoreState = {
   instances: boot.instances,
@@ -123,6 +146,7 @@ let state: StoreState = {
   failedRecent: 0,
   rejectedRecent: 0,
   history: bootHistory,
+  memLong: bootMemLong,
   speedHistory: emptySpeedHistory(),
   traffic: null,
   metricsAvailable: null,
@@ -154,6 +178,7 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
       activeId: "",
       config: instanceToConfig(EMPTY_INSTANCE),
       history: [],
+      memLong: [],
       speedHistory: emptySpeedHistory(),
       peakSpeeds: { inSpeed: 0, outSpeed: 0 },
       samples: null,
@@ -173,11 +198,13 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
   const inst = findInstance(instances, activeId) ?? instances[0]
   persistInstanceState(instances, inst.id)
   const history = readHistory(inst.id)
+  const memLong = readMemLong(inst.id, history)
   patch({
     instances,
     activeId: inst.id,
     config: instanceToConfig(inst),
     history,
+    memLong,
     speedHistory: emptySpeedHistory(),
     peakSpeeds: maxSpeedFromHistory(history),
     samples: null,
@@ -241,8 +268,10 @@ export function savePrefs(prefs: Prefs) {
 
 export function clearHistory() {
   Storage.remove(historyKey(state.activeId))
+  Storage.remove(memLongKey(state.activeId))
   patch({
     history: [],
+    memLong: [],
     speedHistory: emptySpeedHistory(),
     peakSpeeds: { inSpeed: 0, outSpeed: 0 },
   })
@@ -292,6 +321,7 @@ export async function switchInstance(id: string) {
 export async function deleteInstance(id: string) {
   const instances = state.instances.filter((i) => i.id !== id)
   Storage.remove(historyKey(id))
+  Storage.remove(memLongKey(id))
   if (id === state.activeId || instances.length === 0) {
     stopPolling()
     applyActive(instances, instances[0]?.id ?? "")
@@ -321,6 +351,10 @@ export function setRequestsSegment(segment: RequestsSegment) {
 export function openRequestsSegment(segment: RequestsSegment) {
   patch({ requestsSegment: segment })
   tabJump?.(3)
+}
+
+export function openTrafficTab() {
+  tabJump?.(2)
 }
 
 // ---------- 实时速率 ----------
@@ -395,11 +429,14 @@ async function tick() {
     })
     const mem = fromMetrics ? gaugeValue(samples, "surge_memory_bytes") : null
     let newHistory = history
+    let newMemLong = state.memLong
     if (mem !== null) {
       const point: HistoryPoint = { t: now, mem, inSpeed: speeds.inSpeed, outSpeed: speeds.outSpeed }
       newHistory = [...history, point]
       while (newHistory.length > prefs.maxPoints) newHistory.shift()
       writeHistory(activeId, newHistory)
+      newMemLong = appendMinuteSample(state.memLong, { t: now, mem })
+      writeMemLong(activeId, newMemLong)
     }
     patch({
       samples,
@@ -408,6 +445,7 @@ async function tick() {
       error: null,
       running: true,
       history: newHistory,
+      memLong: newMemLong,
       metricsAvailable: fromMetrics,
     })
   } catch (e) {

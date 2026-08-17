@@ -17,7 +17,7 @@ import {
 } from "scripting"
 import { PanelCard } from "../components/PanelCard"
 import { StatCard } from "../components/StatCard"
-import { activeInstance, needsSetup, openRequestsSegment, refreshNow, savePrefs, useStore, type HistoryPoint } from "../lib/store"
+import { activeInstance, needsSetup, openRequestsSegment, openTrafficTab, refreshNow, savePrefs, useStore } from "../lib/store"
 import {
   evaluateScript,
   getDns,
@@ -47,10 +47,10 @@ import { connectErrorText, METRICS_HINT, UI, cardBackground } from "../lib/ui"
 import { MemoryDiagView } from "./MemoryDiagView"
 
 /** 图表降采样到最多 n 个点 */
-export function downsample(pts: HistoryPoint[], n: number): HistoryPoint[] {
+export function downsample<T>(pts: T[], n: number): T[] {
   if (pts.length <= n) return pts
   const step = pts.length / n
-  const out: HistoryPoint[] = []
+  const out: T[] = []
   for (let i = 0; i < n; i++) out.push(pts[Math.floor(i * step)])
   out.push(pts[pts.length - 1])
   return out
@@ -380,6 +380,7 @@ export function OverviewView() {
               value={downParts ? downParts.value : "—"}
               unit={downParts?.unit}
               subtitle={peakInParts ? `峰值 ${peakInParts.value} ${peakInParts.unit}` : "全部网络接口"}
+              onTap={() => openTrafficTab()}
             />
             <StatCard
               icon="arrow.up.circle.fill"
@@ -388,6 +389,7 @@ export function OverviewView() {
               value={upParts ? upParts.value : "—"}
               unit={upParts?.unit}
               subtitle={peakOutParts ? `峰值 ${peakOutParts.value} ${peakOutParts.unit}` : "全部网络接口"}
+              onTap={() => openTrafficTab()}
             />
           </HStack>
           <HStack spacing={12}>
@@ -398,6 +400,7 @@ export function OverviewView() {
               value={active !== null ? String(active) : "—"}
               badge={activityBadge}
               subtitle="HTTP 请求"
+              onTap={() => openRequestsSegment("active")}
             />
             <StatCard
               icon="server.rack"
@@ -405,6 +408,7 @@ export function OverviewView() {
               title="DNS 缓存"
               value={dns !== null ? String(dns) : "—"}
               subtitle={dnsSubtitle}
+              onTap={() => openRequestsSegment("dns")}
             />
           </HStack>
         </VStack>

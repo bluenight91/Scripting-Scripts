@@ -8,6 +8,7 @@ import {
   Image,
   LineChart,
   NavigationStack,
+  Picker,
   ScrollView,
   Spacer,
   Text,
@@ -15,9 +16,17 @@ import {
   VStack,
 } from "scripting"
 import { PanelCard } from "../components/PanelCard"
-import { openRequestsSegment, useStore } from "../lib/store"
+import { openRequestsSegment, savePrefs, useStore } from "../lib/store"
 import { reloadProfile } from "../lib/surgeApi"
-import { analyzeMemoryTrend, formatBytes, formatMemSlope, gaugeValue } from "../lib/metrics"
+import {
+  analyzeMemoryTrend,
+  formatBytes,
+  formatMemSlope,
+  gaugeValue,
+  historyForRange,
+  MEM_RANGE_OPTIONS,
+  type MemRangeMin,
+} from "../lib/metrics"
 import { METRICS_HINT, UI } from "../lib/ui"
 import { downsample } from "./OverviewView"
 
@@ -26,11 +35,16 @@ export function MemoryDiagView() {
   const [confirmReload, setConfirmReload] = useState(false)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
 
-  const trend = analyzeMemoryTrend(state.history)
+  const rangeMin = (MEM_RANGE_OPTIONS.some((o) => o.minutes === state.prefs.memRangeMin)
+    ? state.prefs.memRangeMin
+    : 60) as MemRangeMin
+  const rangeMs = rangeMin * 60 * 1000
+  const windowPts = historyForRange(state.history, state.memLong, rangeMs)
+  const trend = analyzeMemoryTrend(windowPts, { recentMs: Math.min(20 * 60 * 1000, rangeMs) })
   const mem = state.samples ? gaugeValue(state.samples, "surge_memory_bytes") : null
   const currentMB = mem !== null ? mem / (1024 * 1024) : trend.currentMB
 
-  const pts = downsample(state.history, 80)
+  const pts = downsample(windowPts, 80)
   const marks = pts.map((p) => ({
     label: new Date(p.t),
     value: Math.round((p.mem / (1024 * 1024)) * 10) / 10,
@@ -78,10 +92,21 @@ export function MemoryDiagView() {
               <Spacer />
               <Text font={UI.captionFont} foregroundStyle="secondaryLabel">
                 {trend.historyMin > 0
-                  ? `近 ${Math.max(1, Math.round(trend.historyMin))} 分钟 · ${trend.samples} 点`
+                  ? `已有 ${trend.historyMin >= 60 ? `${(trend.historyMin / 60).toFixed(1)} 小时` : `${Math.max(1, Math.round(trend.historyMin))} 分钟`} · ${trend.samples} 点`
                   : "采样中"}
               </Text>
             </HStack>
+            <Picker
+              title="查看范围"
+              value={String(rangeMin)}
+              onChanged={(v: string) =>
+                savePrefs({ ...state.prefs, memRangeMin: Number(v) as MemRangeMin })
+              }
+            >
+              {MEM_RANGE_OPTIONS.map((o) => (
+                <Text key={o.tag} tag={o.tag}>{o.label}</Text>
+              ))}
+            </Picker>
             {marks.length >= 2 ? (
               <Chart
                 frame={{ height: 180 }}
