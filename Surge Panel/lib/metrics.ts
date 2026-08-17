@@ -166,6 +166,70 @@ export function formatDelay(ms: number | undefined | null): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`
 }
 
+export type LatencyBenchmark = {
+  lastTestErrorMessage?: string | null
+  lastTestScoreInMS?: number
+  testing?: number | boolean
+}
+
+export type LatencyStatus = "testing" | "fail" | "ms" | "none"
+
+export function latencyForeground(ms: number): "systemGreen" | "systemOrange" | "systemRed" {
+  return ms < 300 ? "systemGreen" : ms < 800 ? "systemOrange" : "systemRed"
+}
+
+function plausibleLatencyMs(n: number): boolean {
+  return Number.isFinite(n) && n > 0 && n < 60000
+}
+
+export function resolvePolicyLatency(args: {
+  live?: number | null
+  benchmark?: LatencyBenchmark | null
+  testScore?: number | null
+}): { status: LatencyStatus; ms?: number } {
+  if (args.live === null) return { status: "fail" }
+  if (typeof args.live === "number" && Number.isFinite(args.live)) {
+    return args.live > 0 ? { status: "ms", ms: args.live } : { status: "fail" }
+  }
+  const bm = args.benchmark
+  if (bm?.testing === 1 || bm?.testing === true) return { status: "testing" }
+  if (typeof bm?.lastTestScoreInMS === "number" && bm.lastTestScoreInMS > 0) {
+    return { status: "ms", ms: bm.lastTestScoreInMS }
+  }
+  if (bm && bm.lastTestScoreInMS === 0 && bm.lastTestErrorMessage) return { status: "fail" }
+  if (typeof args.testScore === "number" && plausibleLatencyMs(args.testScore)) {
+    return { status: "ms", ms: args.testScore }
+  }
+  return { status: "none" }
+}
+
+export function pickBenchmark(
+  map: Record<string, LatencyBenchmark> | null | undefined,
+  option: { lineHash?: string; name: string }
+): LatencyBenchmark | undefined {
+  if (!map) return undefined
+  if (option.lineHash && map[option.lineHash]) return map[option.lineHash]
+  if (map[option.name]) return map[option.name]
+  return undefined
+}
+
+export function testResultScore(results: unknown, groupName: string, policyName: string): number | undefined {
+  if (!results || typeof results !== "object") return undefined
+  const cur = (results as Record<string, unknown>)[groupName]
+  if (!Array.isArray(cur)) return undefined
+  for (const v of cur) {
+    if (!v || typeof v !== "object" || Array.isArray(v)) continue
+    const rec = v as Record<string, unknown>
+    const name = String(rec.policy ?? rec.name ?? "")
+    if (name !== policyName) continue
+    for (const key of ["score", "available-total", "tcp", "receive"]) {
+      const n = Number(rec[key])
+      if (plausibleLatencyMs(n)) return n
+    }
+  }
+  return undefined
+}
+
 /** 解析 Surge 事件的日期字符串（如 "2026-08-13T14:00:00+0800"） */
 export function parseSurgeDate(s: string): Date | null {
   const normalized = s.replace(/([+-]\d{2})(\d{2})$/, "$1:$2")
