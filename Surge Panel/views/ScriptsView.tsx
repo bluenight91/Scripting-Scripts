@@ -14,7 +14,7 @@ import {
   VStack,
 } from "scripting"
 import { evaluateScript, getScripts, runCronScript, type SurgeScript } from "../lib/surgeApi"
-import { useStore } from "../lib/store"
+import { useStoreSelector } from "../lib/store"
 
 const TYPE_LABELS: Record<string, string> = {
   cron: "定时",
@@ -39,23 +39,23 @@ function shortPath(p: string): string {
 }
 
 export function ScriptsView() {
-  const state = useStore()
+  const config = useStoreSelector((s) => s.config)
   const [scripts, setScripts] = useState<SurgeScript[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState<string | null>(null)
   const [results, setResults] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    getScripts(state.config)
+    getScripts(config)
       .then((r) => setScripts(r.scripts))
       .catch((e) => setError(String(e)))
-  }, [state.config])
+  }, [config])
 
   async function runCron(name: string) {
     if (running) return
     setRunning(name)
     try {
-      await runCronScript(state.config, name)
+      await runCronScript(config, name)
       setResults((m) => ({ ...m, [name]: "✓ 已触发执行" }))
     } catch (e) {
       setResults((m) => ({ ...m, [name]: `✗ ${String(e)}` }))
@@ -130,7 +130,7 @@ export function ScriptsView() {
 }
 
 function ScriptEvaluateView() {
-  const state = useStore()
+  const config = useStoreSelector((s) => s.config)
   const [code, setCode] = useState('console.log("hello from Surge Panel")')
   const [mockType, setMockType] = useState("cron")
   const [result, setResult] = useState<string | null>(null)
@@ -141,7 +141,7 @@ function ScriptEvaluateView() {
     setBusy(true)
     setResult(null)
     try {
-      const r = await evaluateScript(state.config, code, mockType, 5)
+      const r = await evaluateScript(config, code, mockType, 5)
       setResult(typeof r === "string" ? r : JSON.stringify(r, null, 2) || "执行完成（无返回）")
     } catch (e) {
       setResult(`失败：${e}`)

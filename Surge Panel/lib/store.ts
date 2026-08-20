@@ -161,6 +161,18 @@ let tickCount = 0
 let started = false
 let trafficInFlight = false
 
+// 采样每 intervalSec 一次，但序列化整个历史数组写 Storage 没必要那么勤：
+// 攒在内存里，每 30 秒落盘一次，stopPolling / 切实例时强制 flush
+const PERSIST_INTERVAL_MS = 30_000
+let lastPersistAt = Date.now()
+
+function flushHistory() {
+  if (!state.activeId) return
+  writeHistory(state.activeId, state.history)
+  writeMemLong(state.activeId, state.memLong)
+  lastPersistAt = Date.now()
+}
+
 function emit() {
   listeners.forEach((f) => f())
 }
@@ -199,6 +211,7 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
   persistInstanceState(instances, inst.id)
   const history = readHistory(inst.id)
   const memLong = readMemLong(inst.id, history)
+  lastPersistAt = Date.now()
   patch({
     instances,
     activeId: inst.id,
@@ -243,6 +256,42 @@ export function useStore(): StoreState {
   return s
 }
 
+function shallowEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false
+  const ka = Object.keys(a as object)
+  const kb = Object.keys(b as object)
+  if (ka.length !== kb.length) return false
+  for (const k of ka) {
+    if (!Object.is((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * 只订阅 store 的一个切片。speedHistory 每秒 patch 一次，useStore 会让所有
+ * 已挂载 Tab 每秒整体重渲染；不需要秒级数据的视图应改用本 Hook。
+ * selector 需为纯函数（首次渲染时捕获，不随渲染更新）。
+ */
+export function useStoreSelector<T>(selector: (s: StoreState) => T): T {
+  const [snap, setSnap] = useState<T>(selector(getState()))
+  useEffect(() => {
+    let prev = snap
+    const sync = () => {
+      const next = selector(getState())
+      if (!shallowEqual(prev, next)) {
+        prev = next
+        setSnap(next)
+      }
+    }
+    sync()
+    return subscribe(sync)
+  }, [])
+  return snap
+}
+
 export function activeInstance(): SurgeInstance {
   return findInstance(state.instances, state.activeId) ?? state.instances[0] ?? EMPTY_INSTANCE
 }
@@ -257,7 +306,13 @@ export function initStore() {
 export function savePrefs(prefs: Prefs) {
   const prev = state.prefs
   Storage.set(PREFS_KEY, prefs)
-  patch({ prefs })
+  const extra: Partial<StoreState> = {}
+  // 缩短历史长度时立即裁剪，图表与设置不必等下一次采样才一致
+  if (prefs.maxPoints < state.history.length) {
+    extra.history = state.history.slice(-prefs.maxPoints)
+    if (state.activeId) writeHistory(state.activeId, extra.history)
+  }
+  patch({ prefs, ...extra })
   if (
     started &&
     (prefs.autoRefresh !== prev.autoRefresh || prefs.intervalSec !== prev.intervalSec)
@@ -320,13 +375,16 @@ export async function switchInstance(id: string) {
 
 export async function deleteInstance(id: string) {
   const instances = state.instances.filter((i) => i.id !== id)
-  Storage.remove(historyKey(id))
-  Storage.remove(memLongKey(id))
   if (id === state.activeId || instances.length === 0) {
+    // 先停轮询（flush 会写当前实例的键），再删除键，避免刚删又被写回
     stopPolling()
+    Storage.remove(historyKey(id))
+    Storage.remove(memLongKey(id))
     applyActive(instances, instances[0]?.id ?? "")
     await connectActive()
   } else {
+    Storage.remove(historyKey(id))
+    Storage.remove(memLongKey(id))
     persistInstanceState(instances, state.activeId)
     patch({ instances })
   }
@@ -434,9 +492,12 @@ async function tick() {
       const point: HistoryPoint = { t: now, mem, inSpeed: speeds.inSpeed, outSpeed: speeds.outSpeed }
       newHistory = [...history, point]
       while (newHistory.length > prefs.maxPoints) newHistory.shift()
-      writeHistory(activeId, newHistory)
       newMemLong = appendMinuteSample(state.memLong, { t: now, mem })
-      writeMemLong(activeId, newMemLong)
+      if (now - lastPersistAt >= PERSIST_INTERVAL_MS) {
+        writeHistory(activeId, newHistory)
+        writeMemLong(activeId, newMemLong)
+        lastPersistAt = now
+      }
     }
     patch({
       samples,
@@ -457,7 +518,8 @@ async function tick() {
   }
 
   tickCount++
-  if (tickCount % 3 === 1) {
+  // 请求 Tab 可见时由该页自己轮询，这里不再重复拉最近请求
+  if (tickCount % 3 === 1 && state.visibleTab !== 3) {
     try {
       const { requests } = await getRecentRequests(state.config)
       patch({
@@ -507,6 +569,7 @@ export async function startPolling() {
 export function stopPolling() {
   started = false
   clearTimers()
+  flushHistory()
 }
 
 export async function refreshNow() {

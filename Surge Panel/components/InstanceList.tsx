@@ -9,7 +9,7 @@ import {
   VStack,
 } from "scripting"
 import { instanceSubtitle, type SurgeInstance } from "../lib/instances"
-import { switchInstance, useStore } from "../lib/store"
+import { switchInstance, useStoreSelector } from "../lib/store"
 
 export function InstanceList({
   onAdd,
@@ -18,18 +18,21 @@ export function InstanceList({
   onAdd?: () => void
   onEdit?: (inst: SurgeInstance) => void
 }) {
-  const state = useStore()
+  const { instances, activeId } = useStoreSelector((s) => ({
+    instances: s.instances,
+    activeId: s.activeId,
+  }))
 
   return (
     <List navigationTitle="实例">
       <Section footer={<Text font={13}>一次只连接一个 Surge HTTP API。点按切换，不会重新打开面板。</Text>}>
-        {state.instances.length === 0 ? (
+        {instances.length === 0 ? (
           <Text font={15} foregroundStyle="secondaryLabel">
             还没有实例。添加本机或网关的 HTTP API 后才会连接。
           </Text>
         ) : (
-          state.instances.map((inst) => {
-          const active = inst.id === state.activeId
+          instances.map((inst) => {
+          const active = inst.id === activeId
           return (
             <HStack
               key={inst.id}

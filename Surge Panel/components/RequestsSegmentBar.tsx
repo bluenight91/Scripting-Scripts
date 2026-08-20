@@ -1,6 +1,6 @@
 // 请求 Tab 顶部分段器，放进 List 内以便下拉刷新作用在整页
 import { Picker, Text } from "scripting"
-import { setRequestsSegment, useStore, type RequestsSegment } from "../lib/store"
+import { setRequestsSegment, useStoreSelector, type RequestsSegment } from "../lib/store"
 
 export const REQUESTS_SEGMENTS: { id: RequestsSegment; title: string }[] = [
   { id: "active", title: "活动" },
@@ -11,12 +11,12 @@ export const REQUESTS_SEGMENTS: { id: RequestsSegment; title: string }[] = [
 ]
 
 export function RequestsSegmentBar() {
-  const state = useStore()
+  const segment = useStoreSelector((s) => s.requestsSegment)
   return (
     <Picker
       label={<Text>请求分段</Text>}
       pickerStyle="segmented"
-      value={state.requestsSegment}
+      value={segment}
       onChanged={(v: string) => setRequestsSegment(v as RequestsSegment)}
     >
       {REQUESTS_SEGMENTS.map((s) => (
