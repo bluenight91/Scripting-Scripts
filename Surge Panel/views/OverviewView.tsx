@@ -17,7 +17,7 @@ import {
 } from "scripting"
 import { PanelCard } from "../components/PanelCard"
 import { StatCard } from "../components/StatCard"
-import { activeInstance, needsSetup, openRequestsSegment, openTrafficTab, refreshNow, savePrefs, useStore } from "../lib/store"
+import { activeInstance, getState, needsSetup, openRequestsSegment, openTrafficTab, refreshNow, savePrefs, useStore } from "../lib/store"
 import {
   evaluateScript,
   getDns,
@@ -26,6 +26,7 @@ import {
   setFeature,
   FEATURE_LABELS,
   type FeatureKey,
+  type SurgeConfig,
   type SurgeEvent,
 } from "../lib/surgeApi"
 import { InstancesView } from "./InstancesView"
@@ -73,6 +74,9 @@ function niceUpper(n: number): number {
 
 const LINE_STYLE = { lineWidth: 2.5, lineCap: "round" as const, lineJoin: "round" as const }
 
+// 事件 / 功能开关 / Fake-IP 计数 / 本机地址变化很慢，不跟随每次采样刷新
+const SLOW_REFRESH_MS = 30_000
+
 export function OverviewView() {
   const state = useStore()
   const inst = activeInstance()
@@ -100,6 +104,53 @@ export function OverviewView() {
   const isHome = Script.env === "home_screen"
   const setup = needsSetup()
 
+  // 慢数据：事件、功能开关、DNS（只为 Fake-IP 计数）、$network 本机地址。
+  // 这些请求不轻（getDns 是整份缓存），不跟随 5 秒采样，只在总览可见时每 30 秒拉一轮。
+  // 响应落地前校验 config 未变，避免切实例后旧响应覆盖新实例数据。
+  function loadSlowData(cfg: SurgeConfig) {
+    const fresh = () => getState().config === cfg
+    getEvents(cfg)
+      .then((r) => {
+        if (fresh()) setEvents(r.events.slice().reverse())
+      })
+      .catch(() => {
+        if (fresh()) setEvents(null)
+      })
+    Promise.all(
+      (Object.keys(FEATURE_LABELS) as FeatureKey[]).map(async (k) => {
+        const r = await getFeature(cfg, k)
+        return [k, r.enabled] as const
+      })
+    )
+      .then((pairs) => {
+        if (fresh()) setFeatures(Object.fromEntries(pairs) as Record<FeatureKey, boolean>)
+      })
+      .catch(() => {
+        if (fresh()) setFeatures(null)
+      })
+    getDns(cfg)
+      .then((r) => {
+        if (!fresh()) return
+        const addrs = [
+          ...collectRecordAddresses(r.local),
+          ...collectRecordAddresses(r.dnsCache),
+        ]
+        setFakeIpCount(countFakeIps(addrs))
+      })
+      .catch(() => {
+        if (fresh()) setFakeIpCount(null)
+      })
+    evaluateScript(cfg, "$done($network)", "generic", 3)
+      .then((raw) => {
+        if (fresh()) setLocalAddrs(parsePrimaryAddresses(raw))
+      })
+      .catch(() => {
+        if (fresh()) setLocalAddrs({})
+      })
+  }
+
+  const overviewVisible = state.visibleTab === 0
+
   useEffect(() => {
     if (setup) {
       setEvents(null)
@@ -108,49 +159,12 @@ export function OverviewView() {
       setLocalAddrs({})
       return
     }
-    let cancelled = false
-    getEvents(state.config)
-      .then((r) => {
-        if (!cancelled) setEvents(r.events.slice().reverse())
-      })
-      .catch(() => {
-        if (!cancelled) setEvents(null)
-      })
-    Promise.all(
-      (Object.keys(FEATURE_LABELS) as FeatureKey[]).map(async (k) => {
-        const r = await getFeature(state.config, k)
-        return [k, r.enabled] as const
-      })
-    )
-      .then((pairs) => {
-        if (!cancelled) setFeatures(Object.fromEntries(pairs) as Record<FeatureKey, boolean>)
-      })
-      .catch(() => {
-        if (!cancelled) setFeatures(null)
-      })
-    getDns(state.config)
-      .then((r) => {
-        if (cancelled) return
-        const addrs = [
-          ...collectRecordAddresses(r.local),
-          ...collectRecordAddresses(r.dnsCache),
-        ]
-        setFakeIpCount(countFakeIps(addrs))
-      })
-      .catch(() => {
-        if (!cancelled) setFakeIpCount(null)
-      })
-    evaluateScript(state.config, "$done($network)", "generic", 3)
-      .then((raw) => {
-        if (!cancelled) setLocalAddrs(parsePrimaryAddresses(raw))
-      })
-      .catch(() => {
-        if (!cancelled) setLocalAddrs({})
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [state.config, state.samples, setup])
+    if (!overviewVisible) return
+    const cfg = state.config
+    loadSlowData(cfg)
+    const id = setInterval(() => loadSlowData(cfg), SLOW_REFRESH_MS)
+    return () => clearInterval(id)
+  }, [state.config, setup, overviewVisible])
 
   async function toggleFeature(k: FeatureKey, v: boolean) {
     setFeatures((f) => (f ? { ...f, [k]: v } : f))
@@ -168,12 +182,8 @@ export function OverviewView() {
 
   async function reload() {
     if (needsSetup()) return
-    await Promise.all([
-      refreshNow().catch(() => {}),
-      getEvents(state.config)
-        .then((r) => setEvents(r.events.slice().reverse()))
-        .catch(() => setEvents(null)),
-    ])
+    loadSlowData(state.config)
+    await refreshNow().catch(() => {})
   }
 
   const chartPts = downsample(state.history, 60)

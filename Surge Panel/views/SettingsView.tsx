@@ -39,7 +39,7 @@ import {
 } from "../lib/surgeApi"
 import { displayHostPort, displayPrimaryAddrs, parsePrimaryAddresses } from "../lib/metrics"
 import { ChangelogView } from "../components/ReleaseNotesSheet"
-import { clearHistory, needsSetup, savePrefs, useStore } from "../lib/store"
+import { clearHistory, needsSetup, savePrefs, useStoreSelector } from "../lib/store"
 import { ScriptsView } from "./ScriptsView"
 import { InstancesView } from "./InstancesView"
 
@@ -50,8 +50,24 @@ const ENGINE_FEATURE_LABELS: Record<FeatureKey, string> = {
   scripting: "脚本",
 }
 
+/** 「历史长度」的时长说明按当前刷新间隔换算 */
+function historyLenLabel(points: number, intervalSec: number): string {
+  const min = Math.round((points * intervalSec) / 60)
+  if (min >= 60) {
+    const h = min / 60
+    return Number.isInteger(h) ? `约 ${h} 小时` : `约 ${h.toFixed(1)} 小时`
+  }
+  return `约 ${min} 分钟`
+}
+
 export function SettingsView() {
-  const state = useStore()
+  // 只订阅需要的切片：speedHistory 每秒变化，不该带着整个设置页重渲染
+  const { config, prefs, instances, activeId } = useStoreSelector((s) => ({
+    config: s.config,
+    prefs: s.prefs,
+    instances: s.instances,
+    activeId: s.activeId,
+  }))
   const dismiss = Navigation.useDismiss()
 
   // 引擎状态
@@ -78,7 +94,7 @@ export function SettingsView() {
       setLocalAddrs({})
       return
     }
-    evaluateScript(state.config, "$done($network)", "generic", 3)
+    evaluateScript(config, "$done($network)", "generic", 3)
       .then((raw) => {
         setLocalAddrs(parsePrimaryAddresses(raw))
       })
@@ -87,10 +103,10 @@ export function SettingsView() {
       })
     try {
       const [ob, f] = await Promise.all([
-        getOutboundMode(state.config),
+        getOutboundMode(config),
         Promise.all(
           (Object.keys(FEATURE_LABELS) as FeatureKey[]).map(async (k) => {
-            const r = await getFeature(state.config, k)
+            const r = await getFeature(config, k)
             return [k, r.enabled] as const
           })
         ),
@@ -100,10 +116,10 @@ export function SettingsView() {
       setEngineError(null)
       // 全局模式下的默认策略与可选策略列表
       if (ob.mode === "proxy") {
-        getOutboundGlobal(state.config)
+        getOutboundGlobal(config)
           .then((r) => setGlobalPolicy(r.policy))
           .catch(() => {})
-        getRules(state.config)
+        getRules(config)
           .then((r) => setPolicyChoices(r["available-policies"] ?? []))
           .catch(() => {})
       }
@@ -114,15 +130,15 @@ export function SettingsView() {
 
   useEffect(() => {
     loadEngineState()
-  }, [state.config])
+  }, [config])
 
   async function changeOutbound(mode: string) {
     setOutbound(mode)
     try {
-      await setOutboundMode(state.config, mode)
+      await setOutboundMode(config, mode)
       if (mode === "proxy") {
-        getOutboundGlobal(state.config).then((r) => setGlobalPolicy(r.policy)).catch(() => {})
-        getRules(state.config).then((r) => setPolicyChoices(r["available-policies"] ?? [])).catch(() => {})
+        getOutboundGlobal(config).then((r) => setGlobalPolicy(r.policy)).catch(() => {})
+        getRules(config).then((r) => setPolicyChoices(r["available-policies"] ?? [])).catch(() => {})
       }
     } catch (e) {
       setEngineError(String(e))
@@ -132,7 +148,7 @@ export function SettingsView() {
   async function changeGlobalPolicy(policy: string) {
     setGlobalPolicy(policy)
     try {
-      await setOutboundGlobal(state.config, policy)
+      await setOutboundGlobal(config, policy)
     } catch (e) {
       setEngineError(String(e))
     }
@@ -140,7 +156,7 @@ export function SettingsView() {
 
   async function changeLogLevel(level: string) {
     try {
-      await setSurgeLogLevel(state.config, level)
+      await setSurgeLogLevel(config, level)
       setActionMsg(`日志级别已切换为 ${level}（仅当前会话有效）`)
     } catch (e) {
       setEngineError(String(e))
@@ -150,7 +166,7 @@ export function SettingsView() {
   async function toggleFeature(k: FeatureKey, v: boolean) {
     setFeatures((f) => (f ? { ...f, [k]: v } : f))
     try {
-      await setFeature(state.config, k, v)
+      await setFeature(config, k, v)
     } catch (e) {
       setEngineError(String(e))
       loadEngineState()
@@ -162,10 +178,10 @@ export function SettingsView() {
     setConfirm(null)
     try {
       if (what === "reload") {
-        await reloadProfile(state.config)
+        await reloadProfile(config)
         setActionMsg("配置已重新加载")
       } else if (what === "stop") {
-        await stopEngine(state.config)
+        await stopEngine(config)
         setActionMsg("引擎已停止，请在 Surge 中重新启动")
       } else if (what === "clearHistory") {
         clearHistory()
@@ -176,7 +192,7 @@ export function SettingsView() {
     }
   }
 
-  const instanceAddrNote = displayPrimaryAddrs(localAddrs, state.prefs.hideAddresses)
+  const instanceAddrNote = displayPrimaryAddrs(localAddrs, prefs.hideAddresses)
 
   return (
     <List
@@ -206,7 +222,7 @@ export function SettingsView() {
       }}
     >
       {/* 实例 */}
-      <Section header={<Text>实例</Text>} footer={<Text font={13}>{needsSetup() ? "还没有可连接的实例。先添加本机或网关 HTTP API 并填写 Key。" : `可添加本机与网关等多个 Surge HTTP API，点按切换。当前：${state.instances.find((i) => i.id === state.activeId)?.name ?? "—"}（${displayHostPort(state.config.host, state.config.port, state.prefs.hideAddresses)}）${instanceAddrNote ? ` · ${instanceAddrNote}` : ""}`}</Text>}>
+      <Section header={<Text>实例</Text>} footer={<Text font={13}>{needsSetup() ? "还没有可连接的实例。先添加本机或网关 HTTP API 并填写 Key。" : `可添加本机与网关等多个 Surge HTTP API，点按切换。当前：${instances.find((i) => i.id === activeId)?.name ?? "—"}（${displayHostPort(config.host, config.port, prefs.hideAddresses)}）${instanceAddrNote ? ` · ${instanceAddrNote}` : ""}`}</Text>}>
         <NavigationLink title="管理实例" destination={<InstancesView />} />
       </Section>
 
@@ -218,13 +234,13 @@ export function SettingsView() {
         <NavigationLink title="更新说明" destination={<ChangelogView />} />
         <Toggle
           title="自动刷新"
-          value={state.prefs.autoRefresh}
-          onChanged={(v: boolean) => savePrefs({ ...state.prefs, autoRefresh: v })}
+          value={prefs.autoRefresh}
+          onChanged={(v: boolean) => savePrefs({ ...prefs, autoRefresh: v })}
         />
         <Picker
           title="刷新间隔"
-          value={String(state.prefs.intervalSec)}
-          onChanged={(v: string) => savePrefs({ ...state.prefs, intervalSec: Number(v) as 3 | 5 | 10 })}
+          value={String(prefs.intervalSec)}
+          onChanged={(v: string) => savePrefs({ ...prefs, intervalSec: Number(v) as 3 | 5 | 10 })}
         >
           <Text tag="3">3 秒</Text>
           <Text tag="5">5 秒</Text>
@@ -232,17 +248,17 @@ export function SettingsView() {
         </Picker>
         <Picker
           title="历史长度"
-          value={String(state.prefs.maxPoints)}
-          onChanged={(v: string) => savePrefs({ ...state.prefs, maxPoints: Number(v) as 180 | 360 | 720 })}
+          value={String(prefs.maxPoints)}
+          onChanged={(v: string) => savePrefs({ ...prefs, maxPoints: Number(v) as 180 | 360 | 720 })}
         >
-          <Text tag="180">180 点（约 15 分钟）</Text>
-          <Text tag="360">360 点（约 30 分钟）</Text>
-          <Text tag="720">720 点（约 1 小时）</Text>
+          <Text tag="180">{`180 点（${historyLenLabel(180, prefs.intervalSec)}）`}</Text>
+          <Text tag="360">{`360 点（${historyLenLabel(360, prefs.intervalSec)}）`}</Text>
+          <Text tag="720">{`720 点（${historyLenLabel(720, prefs.intervalSec)}）`}</Text>
         </Picker>
         <Toggle
           title="隐藏总览地址"
-          value={state.prefs.hideAddresses}
-          onChanged={(v: boolean) => savePrefs({ ...state.prefs, hideAddresses: v })}
+          value={prefs.hideAddresses}
+          onChanged={(v: boolean) => savePrefs({ ...prefs, hideAddresses: v })}
         />
         <Button title="清空采样历史" role="destructive" systemImage="trash" action={() => setConfirm("clearHistory")} />
       </Section>
@@ -316,7 +332,7 @@ export function SettingsView() {
 // ---------- 模块（子页，避免把设置引擎区拉得很长） ----------
 
 function ModulesView() {
-  const state = useStore()
+  const config = useStoreSelector((s) => s.config)
   const [modules, setModules] = useState<{ available: string[]; enabled: string[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState("")
@@ -328,7 +344,7 @@ function ModulesView() {
       return
     }
     try {
-      setModules(await getModules(state.config))
+      setModules(await getModules(config))
       setError(null)
     } catch (e) {
       setError(String(e))
@@ -337,7 +353,7 @@ function ModulesView() {
 
   useEffect(() => {
     void load()
-  }, [state.config])
+  }, [config])
 
   async function toggleModule(name: string, v: boolean) {
     setModules((m) =>
@@ -349,7 +365,7 @@ function ModulesView() {
         : m
     )
     try {
-      await setModule(state.config, name, v)
+      await setModule(config, name, v)
     } catch (e) {
       setError(String(e))
       void load()
@@ -483,7 +499,7 @@ function ProfileSectionView({
 }
 
 function ProfileView() {
-  const state = useStore()
+  const config = useStoreSelector((s) => s.config)
   const [profile, setProfile] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sensitive, setSensitive] = useState(false)
@@ -491,10 +507,10 @@ function ProfileView() {
 
   useEffect(() => {
     setProfile(null)
-    getCurrentProfile(state.config, sensitive)
+    getCurrentProfile(config, sensitive)
       .then((r) => setProfile(typeof r === "string" ? r : r.profile ?? ""))
       .catch((e) => setError(String(e)))
-  }, [state.config, sensitive])
+  }, [config, sensitive])
 
   const sections = profile ? parseProfileSections(profile) : []
   const q = query.trim().toLowerCase()

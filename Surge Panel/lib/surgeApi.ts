@@ -422,6 +422,28 @@ export function formatProfileValue(value: string): string {
   return parts.join(",\n")
 }
 
+// [Proxy Group] 顺序要拉整份配置才能解析，代价高且只在配置重载时才会变。
+// 缓存到内存：面板内重载配置会失效；Surge 侧改配置后可下拉刷新强制重取。
+let proxyGroupOrderCache: { key: string; order: string[] } | null = null
+
+function configCacheKey(c: SurgeConfig): string {
+  return `${c.protocol}://${c.host.trim()}:${c.port.trim()}`
+}
+
+export function invalidateProfileCache() {
+  proxyGroupOrderCache = null
+}
+
+export async function getProxyGroupOrder(c: SurgeConfig, force = false): Promise<string[]> {
+  const key = configCacheKey(c)
+  if (!force && proxyGroupOrderCache?.key === key) return proxyGroupOrderCache.order
+  const raw = await getCurrentProfile(c)
+  const profile = typeof raw === "string" ? raw : (raw.profile ?? "")
+  const order = parseProxyGroupOrder(profile)
+  proxyGroupOrderCache = { key, order }
+  return order
+}
+
 /** 从配置文本解析 [Proxy Group] 出现顺序，对齐 Surge App 列表 */
 export function parseProxyGroupOrder(profile: string): string[] {
   const names: string[] = []
@@ -529,6 +551,9 @@ export async function fetchOverviewSamples(
 
 // ---------- 配置 / 引擎 ----------
 
-export const reloadProfile = (c: SurgeConfig) => post<void>(c, "/v1/profiles/reload")
+export async function reloadProfile(c: SurgeConfig): Promise<void> {
+  await post<void>(c, "/v1/profiles/reload")
+  invalidateProfileCache()
+}
 
 export const stopEngine = (c: SurgeConfig) => post<void>(c, "/v1/stop")

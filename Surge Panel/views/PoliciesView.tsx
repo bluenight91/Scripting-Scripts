@@ -22,9 +22,8 @@ import {
   getPolicyGroupSelection,
   getPolicyGroups,
   getGroupTestResults,
-  getCurrentProfile,
+  getProxyGroupOrder,
   orderPolicyGroupNames,
-  parseProxyGroupOrder,
   selectPolicyGroup,
   testPolicies,
   testPolicyGroup,
@@ -32,7 +31,7 @@ import {
   type PolicyOption,
 } from "../lib/surgeApi"
 import { formatDelay, latencyForeground, pickBenchmark, resolvePolicyLatency, testResultScore, type LatencyStatus } from "../lib/metrics"
-import { useStore } from "../lib/store"
+import { useStoreSelector } from "../lib/store"
 import { useTabAutoRefresh } from "../lib/liveCache"
 import { connectErrorText } from "../lib/ui"
 
@@ -69,7 +68,7 @@ function DelayLabel({
 }
 
 export function PoliciesView() {
-  const state = useStore()
+  const config = useStoreSelector((s) => s.config)
   const [groups, setGroups] = useState<Record<string, PolicyOption[]> | null>(null)
   const [groupOrder, setGroupOrder] = useState<string[]>([])
   const [selections, setSelections] = useState<Record<string, string>>({})
@@ -79,23 +78,23 @@ export function PoliciesView() {
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState("")
 
-  async function load() {
+  async function load(force = false) {
     setLoading(true)
     setError(null)
     try {
       const [g, bm, tr] = await Promise.all([
-        getPolicyGroups(state.config),
-        getPolicyBenchmarks(state.config).catch(() => ({}) as Record<string, PolicyBenchmarkResult>),
-        getGroupTestResults(state.config).catch(() => ({}) as Record<string, unknown>),
+        getPolicyGroups(config),
+        getPolicyBenchmarks(config).catch(() => ({}) as Record<string, PolicyBenchmarkResult>),
+        getGroupTestResults(config).catch(() => ({}) as Record<string, unknown>),
       ])
       setGroups(g)
       setBenchmarks(bm ?? {})
       setTestResults(tr ?? {})
       const apiNames = Object.keys(g)
       try {
-        const raw = await getCurrentProfile(state.config)
-        const profile = typeof raw === "string" ? raw : raw.profile ?? ""
-        setGroupOrder(orderPolicyGroupNames(apiNames, parseProxyGroupOrder(profile)))
+        // 组顺序解析自整份配置，已做内存缓存；下拉刷新时强制重取
+        const order = await getProxyGroupOrder(config, force)
+        setGroupOrder(orderPolicyGroupNames(apiNames, order))
       } catch {
         setGroupOrder(apiNames)
       }
@@ -103,7 +102,7 @@ export function PoliciesView() {
       const results = await Promise.all(
         apiNames.map(async (n) => {
           try {
-            const r = await getPolicyGroupSelection(state.config, n)
+            const r = await getPolicyGroupSelection(config, n)
             return [n, r.policy] as const
           } catch {
             return null
@@ -120,7 +119,7 @@ export function PoliciesView() {
     }
   }
 
-  useTabAutoRefresh(1, load)
+  useTabAutoRefresh(1, () => load())
 
   const names = groups ? (groupOrder.length ? groupOrder : Object.keys(groups)) : []
   const q = query.trim().toLowerCase()
@@ -129,7 +128,7 @@ export function PoliciesView() {
   return (
     <List
       navigationTitle={Script.env === "home_screen" ? undefined : "策略"}
-      refreshable={async () => { await load() }}
+      refreshable={async () => { await load(true) }}
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
     >
       <Section>
@@ -138,7 +137,7 @@ export function PoliciesView() {
       {error ? (
         <Section>
           <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
-          <Button title="重试" action={load} />
+          <Button title="重试" action={() => load(true)} />
         </Section>
       ) : null}
       {loading && !groups ? (
@@ -170,7 +169,7 @@ export function PoliciesView() {
                     initialBenchmarks={benchmarks}
                     initialTestResults={testResults}
                     onChanged={() => {
-                      getPolicyGroupSelection(state.config, name)
+                      getPolicyGroupSelection(config, name)
                         .then((r) => setSelections((s) => ({ ...s, [name]: r.policy })))
                         .catch(() => {})
                     }}
@@ -198,18 +197,18 @@ export function PoliciesView() {
 }
 
 function NestedGroupLoader({ name }: { name: string }) {
-  const state = useStore()
+  const config = useStoreSelector((s) => s.config)
   const [options, setOptions] = useState<PolicyOption[] | null>(null)
   const [selection, setSelection] = useState<string | null>(null)
 
   useEffect(() => {
-    getPolicyGroups(state.config)
+    getPolicyGroups(config)
       .then((g) => setOptions(g[name] ?? []))
       .catch(() => setOptions([]))
-    getPolicyGroupSelection(state.config, name)
+    getPolicyGroupSelection(config, name)
       .then((r) => setSelection(r.policy))
       .catch(() => setSelection(null))
-  }, [state.config, name])
+  }, [config, name])
 
   if (!options) {
     return (
@@ -226,7 +225,7 @@ function NestedGroupLoader({ name }: { name: string }) {
       options={options}
       initialSelection={selection}
       onChanged={() => {
-        getPolicyGroupSelection(state.config, name)
+        getPolicyGroupSelection(config, name)
           .then((r) => setSelection(r.policy))
           .catch(() => {})
       }}
@@ -249,7 +248,7 @@ export function GroupDetailView({
   initialTestResults?: Record<string, unknown> | null
   onChanged: () => void
 }) {
-  const state = useStore()
+  const config = useStoreSelector((s) => s.config)
   const [selection, setSelection] = useState<string | null>(initialSelection)
   const [standalone, setStandalone] = useState<Set<string> | null>(null)
   const [details, setDetails] = useState<Record<string, string>>({})
@@ -271,19 +270,19 @@ export function GroupDetailView({
   const [groupTests, setGroupTests] = useState<Record<string, unknown> | null>(initialTestResults)
 
   function refreshBenchmarks() {
-    return getPolicyBenchmarks(state.config)
+    return getPolicyBenchmarks(config)
       .then((r) => setBenchmarks(r ?? {}))
       .catch(() => setBenchmarks({}))
   }
 
   useEffect(() => {
     refreshBenchmarks()
-  }, [state.config])
+  }, [config])
 
   // 独立策略（/v1/policies）才能单独测延迟；组内嵌节点 HTTP API 不支持延迟测试
   useEffect(() => {
     let cancelled = false
-    getPolicies(state.config)
+    getPolicies(config)
       .then((r) => {
         if (!cancelled) setStandalone(new Set(r.proxies))
       })
@@ -293,14 +292,14 @@ export function GroupDetailView({
     return () => {
       cancelled = true
     }
-  }, [state.config])
+  }, [config])
 
   const isStandalone = (name: string) => standalone?.has(name) ?? false
 
   // test_results 只包含 url-test/fallback/load-balance 组——据此判断组类型
   useEffect(() => {
     let cancelled = false
-    getGroupTestResults(state.config)
+    getGroupTestResults(config)
       .then((r) => {
         if (cancelled) return
         setGroupTests(r ?? {})
@@ -319,7 +318,7 @@ export function GroupDetailView({
     return () => {
       cancelled = true
     }
-  }, [state.config, groupName])
+  }, [config, groupName])
 
   // 独立策略拉取原始配置行展示
   useEffect(() => {
@@ -328,7 +327,7 @@ export function GroupDetailView({
     options
       .filter((o) => !o.isGroup && standalone.has(o.name))
       .forEach((o) => {
-        getPolicyDetail(state.config, o.name)
+        getPolicyDetail(config, o.name)
           .then((r) => {
             const v = r?.[o.name]
             if (v && !cancelled) setDetails((d) => ({ ...d, [o.name]: v }))
@@ -338,14 +337,14 @@ export function GroupDetailView({
     return () => {
       cancelled = true
     }
-  }, [standalone, state.config])
+  }, [standalone, config])
 
   async function select(policy: string) {
     if (policy === selection || selecting) return
     setSelecting(policy)
     setError(null)
     try {
-      await selectPolicyGroup(state.config, groupName, policy)
+      await selectPolicyGroup(config, groupName, policy)
       setSelection(policy)
       onChanged()
     } catch (e) {
@@ -367,7 +366,7 @@ export function GroupDetailView({
       if (autoGroup !== true) return
       try {
         setTestProgress("组测速中…")
-        const r = await testPolicyGroup(state.config, groupName)
+        const r = await testPolicyGroup(config, groupName)
         setElected(r?.available ?? [])
       } catch {
         // 部分组类型不支持，忽略
@@ -383,7 +382,7 @@ export function GroupDetailView({
       let done = 0
       for (const n of names) {
         try {
-          const r = await testPolicies(state.config, [n])
+          const r = await testPolicies(config, [n])
           const v = r ? r[n]?.["round-one-total"] : undefined
           result[n] = typeof v === "number" ? v : null
         } catch {
@@ -398,7 +397,7 @@ export function GroupDetailView({
     await Promise.all([groupTest, latencyTest])
     // 组测速完成后 Surge 会更新基准测试缓存，重新拉取以刷新所有节点的延迟显示
     await refreshBenchmarks()
-    await getGroupTestResults(state.config)
+    await getGroupTestResults(config)
       .then((r) => setGroupTests(r ?? {}))
       .catch(() => {})
     setTestProgress("")

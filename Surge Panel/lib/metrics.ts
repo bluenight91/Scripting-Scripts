@@ -431,7 +431,7 @@ export function historyForRange(
 
 export function analyzeMemoryTrend(
   history: MemoryPoint[],
-  opts?: { recentMs?: number }
+  opts?: { recentMs?: number; intervalSec?: number }
 ): {
   level: "ok" | "warning" | "insufficient"
   message: string
@@ -456,9 +456,11 @@ export function analyzeMemoryTrend(
   }
   const pts = history.filter((p) => p.mem > 0)
   if (pts.length < 12) {
+    // 判定门槛是 12 个采样点，需要的时长随刷新间隔变化
+    const needMin = Math.max(1, Math.ceil((12 * (opts?.intervalSec ?? 5)) / 60))
     return {
       level: "insufficient",
-      message: "采样数据不足，持续运行约 1 分钟后再查看趋势判断。",
+      message: `采样数据不足，持续运行约 ${needMin} 分钟后再查看趋势判断。`,
       ...empty,
       samples: pts.length,
       currentMB: pts.length ? pts[pts.length - 1].mem / (1024 * 1024) : 0,

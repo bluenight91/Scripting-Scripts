@@ -8,13 +8,13 @@ import {
   Spacer,
   Text,
   TextField,
+  useEffect,
   useState,
   VStack,
   type Color,
 } from "scripting"
 import { getRules } from "../lib/surgeApi"
-import { useStore } from "../lib/store"
-import { useTabAutoRefresh } from "../lib/liveCache"
+import { needsSetup, useStoreSelector } from "../lib/store"
 import { connectErrorText } from "../lib/ui"
 import { RequestsSegmentBar } from "../components/RequestsSegmentBar"
 
@@ -58,7 +58,7 @@ const TYPE_COLORS: Record<string, Color> = {
 }
 
 export function RulesView() {
-  const state = useStore()
+  const config = useStoreSelector((s) => s.config)
   const [rules, setRules] = useState<ParsedRule[] | null>(null)
   const [policies, setPolicies] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -67,8 +67,9 @@ export function RulesView() {
   const [policyFilter, setPolicyFilter] = useState("__all__")
 
   async function load() {
+    if (needsSetup()) return
     try {
-      const r = await getRules(state.config)
+      const r = await getRules(config)
       setRules(r.rules.map(parseRule))
       setPolicies(r["available-policies"] ?? [])
       setError(null)
@@ -77,7 +78,10 @@ export function RulesView() {
     }
   }
 
-  useTabAutoRefresh(3, load)
+  // 规则只在配置重载时变化：进入分段拉一次即可，下拉可手动刷新，不随面板周期轮询
+  useEffect(() => {
+    void load()
+  }, [config])
 
   const types = rules ? [...new Set(rules.map((r) => r.type))].sort() : []
 

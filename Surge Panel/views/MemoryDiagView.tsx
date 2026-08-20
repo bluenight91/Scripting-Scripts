@@ -40,7 +40,10 @@ export function MemoryDiagView() {
     : 60) as MemRangeMin
   const rangeMs = rangeMin * 60 * 1000
   const windowPts = historyForRange(state.history, state.memLong, rangeMs)
-  const trend = analyzeMemoryTrend(windowPts, { recentMs: Math.min(20 * 60 * 1000, rangeMs) })
+  const trend = analyzeMemoryTrend(windowPts, {
+    recentMs: Math.min(20 * 60 * 1000, rangeMs),
+    intervalSec: state.prefs.intervalSec,
+  })
   const mem = state.samples ? gaugeValue(state.samples, "surge_memory_bytes") : null
   const currentMB = mem !== null ? mem / (1024 * 1024) : trend.currentMB
 
