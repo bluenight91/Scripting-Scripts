@@ -1,6 +1,6 @@
 # Surge Panel for Scripting
 
-一个运行在 iOS [Scripting](https://github.com/Scripting) App 上的 Surge 监控面板（2.0）。通过 Surge HTTP API + Prometheus Metrics 提供五标签仪表盘，支持多个实例切换，可挂到 Scripting 首页 Tab。
+一个运行在 iOS [Scripting](https://github.com/Scripting) App 上的 Surge 监控面板。通过 Surge HTTP API + Prometheus Metrics 提供五标签仪表盘，支持多个实例切换、Scripting 首页 Tab 与原生桌面 Widget。
 
 ## 功能
 
@@ -10,6 +10,7 @@
 - **流量**：实时合计、网卡 / 节点明细（实时·累计·峰值排序）、节点累计排行
 - **请求**：活动 | 最近 | 事件 | DNS | 规则。活动/最近可搜索排序；活动连接可终止；DNS 含静态 Host 与动态缓存、刷新与延迟测试
 - **设置**：实例管理、刷新间隔、出站模式、功能开关、模块（子页 + 搜索）、日志、脚本（含调试执行）、当前配置（按分段进入，可选敏感字段）、重载 / 停引擎
+- **桌面组件**：按 Widget 尺寸显示本地网络、诊断策略与出口、直连/策略 HTTP 延迟、HTTP/3、启发式 IP 风险及流媒体/AI 服务可达性
 
 ## 使用
 
@@ -20,12 +21,24 @@
 2. 在 Surge 中开启 HTTP API（`http-api = 0.0.0.0:6166` + `http-api-key`）。`/metrics` 仅 iOS 5.22+ / Mac 6.9+（TestFlight）；商店版与 Mac 6.8 仍可用流量、策略、请求，只是没有内存仪表
 3. 首次打开不会自动连接。到总览或「设置 → 实例」添加本机 / 网关 HTTP API 并填写 Key（本机默认 http；https 会跳过 MITM 自签证书校验）
 4. 可选：Scripting 设置 → Show Home Tab → 选择本脚本
+5. 桌面组件：先到「设置 → 桌面组件 → 网络诊断组件」选择实例与诊断策略；再在 iOS/iPadOS 主屏幕添加 Scripting 小组件并选择 Surge Panel
+
+### 网络诊断组件说明
+
+- Scripting Widget 是一次性快照，不启动面板的 1Hz 轮询；请求 15 / 30 / 60 分钟后刷新，但 WidgetKit 可能延后执行
+- 规则模式不存在唯一“当前节点”，因此组件使用你明确选择的**诊断策略**；媒体与 AI 可单独指定策略组
+- 延迟是完整 HTTP 请求耗时，不是 ICMP Ping；服务结果只表示网页**可达性**，不代表地区解锁
+- HTTP/3 仅表示 Cloudflare trace 协商到 h3；组件不会根据本地与出口 IP 猜测 NAT 类型
+- 出口信息查询使用 `ipapi.is` 与 `ipwho.is`；可选的“深度 IP 风险检测”还会请求 `proxycheck.io`，默认关闭
+- IP 风险分数是第三方信号的启发式摘要，不是权威信誉评分；网络失败时最多沿用 6 小时内的成功快照并标记“缓存”
+- 地址打码复用「隐藏总览地址」。高级用户可在 Widget 参数中传 JSON 覆盖单个组件，例如：`{"instanceId":"实例 ID","policy":"策略组","refreshMin":30}`
 
 更新记录见 [`changelog.md`](./changelog.md)。导入后若说明有变化会弹出更新说明。
 
 ## 技术要点
 
 - 数据层：`lib/surgeApi.ts` 无状态封装 HTTP API；`lib/instances.ts` 多实例与迁移；`lib/store.ts` 当前实例的 metrics / 1Hz traffic
+- Widget：`widget.tsx` 一次性读取轻量配置；`lib/networkDiag.ts` 通过 Surge generic script 的 `$httpClient policy` 批量探测，快照按实例和策略组合缓存
 - 实时速率：`/v1/traffic` 1Hz、内存 60 点；折线 `monotone`、Y 轴从 0
 - 首页：顶部分段 + 翻页；Scripting 浮层底栏可见，内容铺到屏幕底
 - 不做：Mac 设备管理、Surge 配置档切换、系统代理 / Enhanced Mode、MITM CA 下载

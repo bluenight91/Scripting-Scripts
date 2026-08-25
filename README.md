@@ -2,9 +2,9 @@
 
 我在 iOS [Scripting App](https://scriptingapp.github.io/zh/index) 上编写的脚本合集。需已安装 Scripting 后使用。
 
-## Surge Panel 2.0
+## Surge Panel 2.1
 
-Surge HTTP API + Prometheus 监控面板。五个 Tab：总览、策略、流量、请求、设置。支持多个实例（本机 / 网关）热切换，可挂到 Scripting 首页 Tab。
+Surge HTTP API + Prometheus 监控面板。五个 Tab：总览、策略、流量、请求、设置。支持多个实例（本机 / 网关）热切换、Scripting 首页 Tab，以及按尺寸自适应的网络诊断桌面组件。
 
 - 目录：[Surge Panel](./Surge%20Panel/)
 - [一键导入](https://www.scripting.fun/import_scripts/?urls=%5B%22https%3A%2F%2Fgithub.com%2Fbluenight91%2FScripting-Scripts%2Ftree%2Fmain%2FSurge%2520Panel%22%5D)
