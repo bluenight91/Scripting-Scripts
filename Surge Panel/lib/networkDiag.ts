@@ -307,11 +307,13 @@ export function parseExitInfo(data: unknown, source = ""): ExitInfo {
     stringValue(root.country) ||
     stringValue(root.country_name) ||
     stringValue(location.country) ||
-    stringValue(location.country_name)
+    stringValue(location.country_name) ||
+    stringValue(root.cc)
   const asnRaw =
-    root.asn && typeof root.asn !== "object"
+    root.asn_num ??
+    (root.asn && typeof root.asn !== "object"
       ? root.asn
-      : asnObject.asn ?? connection.asn ?? root.as
+      : asnObject.asn ?? connection.asn ?? root.as)
   return {
     ip:
       stringValue(root.ip) ||
@@ -321,7 +323,8 @@ export function parseExitInfo(data: unknown, source = ""): ExitInfo {
     countryCode:
       stringValue(root.country_code) ||
       stringValue(root.countryCode) ||
-      stringValue(location.country_code),
+      stringValue(location.country_code) ||
+      stringValue(root.cc),
     region:
       stringValue(root.region) ||
       stringValue(root.regionName) ||
@@ -332,6 +335,8 @@ export function parseExitInfo(data: unknown, source = ""): ExitInfo {
       stringValue(root.isp) ||
       stringValue(connection.isp) ||
       stringValue(company.name) ||
+      stringValue(root.company_name) ||
+      stringValue(root.asn_org) ||
       stringValue(root.org),
     asn: asnRaw == null ? "" : String(asnRaw).replace(/^AS/i, "AS"),
     hosting: boolValue(root.is_datacenter, root.datacenter, root.hosting, security.hosting),
@@ -563,6 +568,19 @@ function readCachedSnapshot(key: string): NetworkSnapshot | null {
   return snapshot.schema === 1 && typeof snapshot.generatedAt === "number" ? snapshot : null
 }
 
+export function isSnapshotFresh(
+  snapshot: Pick<NetworkSnapshot, "generatedAt"> | null,
+  refreshMin: number,
+  now = Date.now()
+): boolean {
+  return Boolean(
+    snapshot &&
+      Number.isFinite(snapshot.generatedAt) &&
+      now - snapshot.generatedAt >= 0 &&
+      now - snapshot.generatedAt < refreshMin * 60 * 1000
+  )
+}
+
 function hideAddresses(): boolean {
   const prefs = objectValue(Storage.get(PANEL_PREFS_KEY))
   return prefs.hideAddresses === true
@@ -631,8 +649,7 @@ export async function loadNetworkSnapshot(options?: {
   const cacheKey = networkSnapshotCacheKey(instance.id, prefs)
   const cached = readCachedSnapshot(cacheKey)
   const now = Date.now()
-  const ttl = prefs.refreshMin * 60 * 1000
-  if (!options?.force && cached && now - cached.generatedAt < ttl) {
+  if (!options?.force && isSnapshotFresh(cached, prefs.refreshMin, now)) {
     return { ...cached, fromCache: true, stale: false, cachedAt: cached.generatedAt }
   }
 

@@ -21,6 +21,16 @@ type WidgetFamilyName =
   | "accessoryCircular"
   | string
 
+export type NetworkWidgetLayout = "large" | "medium" | "small" | "rectangular" | "circular"
+
+export function widgetLayoutForFamily(family: WidgetFamilyName): NetworkWidgetLayout {
+  if (family === "accessoryCircular") return "circular"
+  if (family === "accessoryRectangular") return "rectangular"
+  if (family === "systemSmall") return "small"
+  if (family === "systemMedium") return "medium"
+  return "large"
+}
+
 function timeLabel(timestamp: number): string {
   const date = new Date(timestamp)
   const pad = (value: number) => String(value).padStart(2, "0")
@@ -406,9 +416,10 @@ export function NetworkDiagWidget({
   family: WidgetFamilyName
 }) {
   if (!snapshot.ok) return <ErrorView snapshot={snapshot} family={family} />
-  if (family === "accessoryCircular") return <AccessoryWidget snapshot={snapshot} circular />
-  if (family === "accessoryRectangular") return <AccessoryWidget snapshot={snapshot} circular={false} />
-  if (family === "systemSmall") return <SmallWidget snapshot={snapshot} />
-  if (family === "systemMedium") return <MediumWidget snapshot={snapshot} />
+  const layout = widgetLayoutForFamily(family)
+  if (layout === "circular") return <AccessoryWidget snapshot={snapshot} circular />
+  if (layout === "rectangular") return <AccessoryWidget snapshot={snapshot} circular={false} />
+  if (layout === "small") return <SmallWidget snapshot={snapshot} />
+  if (layout === "medium") return <MediumWidget snapshot={snapshot} />
   return <LargeWidget snapshot={snapshot} />
 }
