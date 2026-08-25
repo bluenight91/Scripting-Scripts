@@ -232,8 +232,16 @@ function HealthRow({ snapshot }: { snapshot: NetworkSnapshot }) {
         />
         <Metric
           label="IP 风险"
-          value={`${snapshot.risk.level} · ${snapshot.risk.score}`}
-          color={snapshot.risk.level === "低" ? "systemGreen" : snapshot.risk.level === "中" ? "systemOrange" : "systemRed"}
+          value={snapshot.risk.level === "未知" ? "—" : `${snapshot.risk.level} · ${snapshot.risk.score}`}
+          color={
+            snapshot.risk.level === "低"
+              ? "systemGreen"
+              : snapshot.risk.level === "中"
+                ? "systemOrange"
+                : snapshot.risk.level === "高"
+                  ? "systemRed"
+                  : "secondaryLabel"
+          }
         />
       </HStack>
     </Card>
@@ -343,7 +351,10 @@ function MediumWidget({ snapshot }: { snapshot: NetworkSnapshot }) {
         <Metric label="直连" value={delayLabel(snapshot.directLatencyMs)} color={delayColor(snapshot.directLatencyMs)} />
         <Metric label="策略" value={delayLabel(snapshot.policyLatencyMs)} color={delayColor(snapshot.policyLatencyMs)} />
         <Metric label="HTTP/3" value={snapshot.http3 ? "可用" : snapshot.http3 === false ? "未协商" : "—"} />
-        <Metric label="风险" value={`${snapshot.risk.level} · ${snapshot.risk.score}`} />
+        <Metric
+          label="风险"
+          value={snapshot.risk.level === "未知" ? "—" : `${snapshot.risk.level} · ${snapshot.risk.score}`}
+        />
       </HStack>
     </VStack>
   )

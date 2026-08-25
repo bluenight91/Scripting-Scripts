@@ -54,7 +54,7 @@ export type ExitInfo = {
 
 export type RiskSummary = {
   score: number
-  level: "低" | "中" | "高"
+  level: "低" | "中" | "高" | "未知"
   heuristic: true
   deepChecked: boolean
 }
@@ -397,6 +397,14 @@ export function riskSummary(
   exit: ExitInfo,
   deep?: Partial<ExitInfo> & { risk?: number }
 ): RiskSummary {
+  if (!exit.ip) {
+    return {
+      score: 0,
+      level: "未知",
+      heuristic: true,
+      deepChecked: Boolean(deep),
+    }
+  }
   let score = exit.hosting ? 76 : 92
   if (exit.proxy || deep?.proxy) score -= 24
   if (exit.vpn || deep?.vpn) score -= 18
@@ -650,7 +658,13 @@ export async function loadNetworkSnapshot(options?: {
   const cached = readCachedSnapshot(cacheKey)
   const now = Date.now()
   if (!options?.force && isSnapshotFresh(cached, prefs.refreshMin, now)) {
-    return { ...cached, fromCache: true, stale: false, cachedAt: cached.generatedAt }
+    return {
+      ...cached,
+      hideAddresses: hideAddresses(),
+      fromCache: true,
+      stale: false,
+      cachedAt: cached.generatedAt,
+    }
   }
 
   const config = instanceToConfig(instance)
@@ -711,6 +725,7 @@ export async function loadNetworkSnapshot(options?: {
     if (cached && now - cached.generatedAt <= MAX_STALE_MS) {
       return {
         ...cached,
+        hideAddresses: hideAddresses(),
         fromCache: true,
         stale: true,
         cachedAt: cached.generatedAt,
