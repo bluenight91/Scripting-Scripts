@@ -42,6 +42,7 @@ import { ChangelogView } from "../components/ReleaseNotesSheet"
 import { clearHistory, needsSetup, savePrefs, useStoreSelector } from "../lib/store"
 import { ScriptsView } from "./ScriptsView"
 import { InstancesView } from "./InstancesView"
+import { WidgetSettingsView } from "./WidgetSettingsView"
 
 const ENGINE_FEATURE_LABELS: Record<FeatureKey, string> = {
   mitm: "MitM",
@@ -261,6 +262,18 @@ export function SettingsView() {
           onChanged={(v: boolean) => savePrefs({ ...prefs, hideAddresses: v })}
         />
         <Button title="清空采样历史" role="destructive" systemImage="trash" action={() => setConfirm("clearHistory")} />
+      </Section>
+
+      {/* 桌面组件：详细选项放子页，避免继续拉长主设置页 */}
+      <Section
+        header={<Text>桌面组件</Text>}
+        footer={
+          <Text font={13}>
+            配置网络诊断组件使用的实例、策略与刷新周期。添加 Scripting 小组件后选择 Surge Panel 即可。
+          </Text>
+        }
+      >
+        <NavigationLink title="网络诊断组件" destination={<WidgetSettingsView />} />
       </Section>
 
       {/* 引擎：出站、功能开关、模块、日志 */}
