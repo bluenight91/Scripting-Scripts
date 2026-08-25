@@ -1,4 +1,5 @@
 import {
+  Button,
   HStack,
   Image,
   Spacer,
@@ -57,17 +58,25 @@ function Card({
   children,
   spacing = 5,
   padding = 9,
+  width,
+  height,
 }: {
   children: any
   spacing?: number
   padding?: number
+  width?: number
+  height?: number
 }) {
   return (
     <VStack
       alignment="leading"
       spacing={spacing}
       padding={padding}
-      frame={{ maxWidth: "infinity", alignment: "leading" }}
+      frame={
+        width != null
+          ? { width, height, alignment: "leading" }
+          : { maxWidth: "infinity", height, alignment: "leading" }
+      }
       background={cardBackground()}
     >
       {children}
@@ -98,7 +107,15 @@ function CardTitle({
   )
 }
 
-function Header({ snapshot, compact = false }: { snapshot: NetworkSnapshot; compact?: boolean }) {
+function Header({
+  snapshot,
+  compact = false,
+  refreshIntent,
+}: {
+  snapshot: NetworkSnapshot
+  compact?: boolean
+  refreshIntent?: any
+}) {
   const statusColor: Color = snapshot.ok ? (snapshot.stale ? "systemOrange" : "systemGreen") : "systemRed"
   return (
     <HStack spacing={6}>
@@ -118,6 +135,14 @@ function Header({ snapshot, compact = false }: { snapshot: NetworkSnapshot; comp
       <Text font={compact ? 9 : 10} foregroundStyle="secondaryLabel" lineLimit={1}>
         {snapshot.stale ? `缓存 ${timeLabel(snapshot.cachedAt)}` : timeLabel(snapshot.generatedAt)}
       </Text>
+      {refreshIntent ? (
+        <Button
+          title=""
+          systemImage="arrow.clockwise"
+          buttonStyle="plain"
+          intent={refreshIntent}
+        />
+      ) : null}
     </HStack>
   )
 }
@@ -144,12 +169,20 @@ function ErrorView({ snapshot, family }: { snapshot: NetworkSnapshot; family: Wi
   )
 }
 
-function LocalCard({ snapshot }: { snapshot: NetworkSnapshot }) {
+function LocalCard({
+  snapshot,
+  width,
+  height,
+}: {
+  snapshot: NetworkSnapshot
+  width?: number
+  height?: number
+}) {
   const network = snapshot.network
   const localIp = displaySnapshotIp(network.ipv4 || network.ipv6, snapshot.hideAddresses)
   const gateway = displaySnapshotIp(network.gateway, snapshot.hideAddresses)
   return (
-    <Card>
+    <Card width={width} height={height}>
       <CardTitle
         icon={network.ssid ? "wifi" : "antenna.radiowaves.left.and.right"}
         title="本地网络"
@@ -171,11 +204,19 @@ function LocalCard({ snapshot }: { snapshot: NetworkSnapshot }) {
   )
 }
 
-function PolicyCard({ snapshot }: { snapshot: NetworkSnapshot }) {
+function PolicyCard({
+  snapshot,
+  width,
+  height,
+}: {
+  snapshot: NetworkSnapshot
+  width?: number
+  height?: number
+}) {
   const exit = snapshot.policyExit
   const location = exit.city || exit.region || exit.country || "未知地区"
   return (
-    <Card>
+    <Card width={width} height={height}>
       <CardTitle
         icon="point.3.connected.trianglepath.dotted"
         title="诊断策略"
@@ -211,9 +252,15 @@ function Metric({ label, value, color = "label" }: { label: string; value: strin
   )
 }
 
-function HealthRow({ snapshot }: { snapshot: NetworkSnapshot }) {
+function HealthRow({
+  snapshot,
+  height,
+}: {
+  snapshot: NetworkSnapshot
+  height?: number
+}) {
   return (
-    <Card spacing={4} padding={8}>
+    <Card spacing={4} padding={8} height={height}>
       <HStack spacing={0}>
         <Metric
           label="直连 HTTP"
@@ -254,16 +301,20 @@ function ServicesCard({
   title,
   icon,
   color,
+  width,
+  height,
 }: {
   snapshot: NetworkSnapshot
   category: ServiceCategory
   title: string
   icon: string
   color: Color
+  width?: number
+  height?: number
 }) {
   const services = snapshot.services.filter((service) => service.category === category)
   return (
-    <Card spacing={4} padding={8}>
+    <Card spacing={4} padding={8} width={width} height={height}>
       <CardTitle
         icon={icon}
         title={title}
@@ -303,18 +354,73 @@ function ServiceRow({ name, ok }: { name: string; ok: boolean }) {
   )
 }
 
-function LargeWidget({ snapshot }: { snapshot: NetworkSnapshot }) {
+function SummaryCard({
+  title,
+  icon,
+  color,
+  primary,
+  secondary,
+  width,
+  height,
+}: {
+  title: string
+  icon: string
+  color: Color
+  primary: string
+  secondary: string
+  width: number
+  height: number
+}) {
+  return (
+    <Card spacing={2} padding={7} width={width} height={height}>
+      <CardTitle icon={icon} title={title} color={color} />
+      <Text font={12} fontWeight="semibold" lineLimit={1} minScaleFactor={0.65}>
+        {primary}
+      </Text>
+      <Text font={9} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.6}>
+        {secondary}
+      </Text>
+    </Card>
+  )
+}
+
+function LargeWidget({
+  snapshot,
+  width,
+  refreshIntent,
+}: {
+  snapshot: NetworkSnapshot
+  width: number
+  refreshIntent?: any
+}) {
+  const cardWidth = Math.max(120, (width - 24 - 7) / 2)
   return (
     <VStack alignment="leading" spacing={7} padding={12} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-      <Header snapshot={snapshot} />
+      <Header snapshot={snapshot} refreshIntent={refreshIntent} />
       <HStack spacing={7}>
-        <LocalCard snapshot={snapshot} />
-        <PolicyCard snapshot={snapshot} />
+        <LocalCard snapshot={snapshot} width={cardWidth} height={100} />
+        <PolicyCard snapshot={snapshot} width={cardWidth} height={100} />
       </HStack>
-      <HealthRow snapshot={snapshot} />
+      <HealthRow snapshot={snapshot} height={56} />
       <HStack spacing={7}>
-        <ServicesCard snapshot={snapshot} category="media" title="流媒体可达性" icon="play.rectangle.fill" color="systemBlue" />
-        <ServicesCard snapshot={snapshot} category="ai" title="AI 可达性" icon="sparkles" color="systemPurple" />
+        <ServicesCard
+          snapshot={snapshot}
+          category="media"
+          title="流媒体可达性"
+          icon="play.rectangle.fill"
+          color="systemBlue"
+          width={cardWidth}
+          height={104}
+        />
+        <ServicesCard
+          snapshot={snapshot}
+          category="ai"
+          title="AI 可达性"
+          icon="sparkles"
+          color="systemPurple"
+          width={cardWidth}
+          height={104}
+        />
       </HStack>
       <Text font={8} foregroundStyle="tertiaryLabel" lineLimit={1}>
         HTTP 应用层探测 · 风险分数为启发式摘要
@@ -323,68 +429,81 @@ function LargeWidget({ snapshot }: { snapshot: NetworkSnapshot }) {
   )
 }
 
-function MediumWidget({ snapshot }: { snapshot: NetworkSnapshot }) {
+function MediumWidget({
+  snapshot,
+  width,
+  refreshIntent,
+}: {
+  snapshot: NetworkSnapshot
+  width: number
+  refreshIntent?: any
+}) {
+  const cardWidth = Math.max(100, (width - 20 - 6) / 2)
+  const localIp = displaySnapshotIp(
+    snapshot.network.ipv4 || snapshot.network.ipv6,
+    snapshot.hideAddresses
+  )
   return (
-    <VStack alignment="leading" spacing={6} padding={10} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-      <Header snapshot={snapshot} compact />
+    <VStack alignment="leading" spacing={5} padding={10} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+      <Header snapshot={snapshot} compact refreshIntent={refreshIntent} />
       <HStack spacing={6}>
-        <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-          <Text font={9} foregroundStyle="secondaryLabel">本地网络</Text>
-          <Text font={12} fontWeight="semibold" lineLimit={1}>
-            {snapshot.network.ssid || snapshot.network.interfaceName || "当前网络"}
-          </Text>
-          <Text font={9} foregroundStyle="secondaryLabel" lineLimit={1}>
-            {displaySnapshotIp(snapshot.network.ipv4 || snapshot.network.ipv6, snapshot.hideAddresses)}
-          </Text>
-        </VStack>
-        <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-          <Text font={9} foregroundStyle="secondaryLabel">诊断策略</Text>
-          <Text font={12} fontWeight="semibold" lineLimit={1} minScaleFactor={0.7}>
-            {`${countryFlag(snapshot.policyExit.countryCode)} ${snapshot.policy.label}`}
-          </Text>
-          <Text font={9} foregroundStyle="secondaryLabel" lineLimit={1}>
-            {snapshot.policyExit.city || snapshot.policyExit.country || snapshot.policy.node || "出口信息不足"}
-          </Text>
-        </VStack>
-      </HStack>
-      <HStack spacing={0}>
-        <Metric label="直连" value={delayLabel(snapshot.directLatencyMs)} color={delayColor(snapshot.directLatencyMs)} />
-        <Metric label="策略" value={delayLabel(snapshot.policyLatencyMs)} color={delayColor(snapshot.policyLatencyMs)} />
-        <Metric label="HTTP/3" value={snapshot.http3 ? "可用" : snapshot.http3 === false ? "未协商" : "—"} />
-        <Metric
-          label="风险"
-          value={snapshot.risk.level === "未知" ? "—" : `${snapshot.risk.level} · ${snapshot.risk.score}`}
+        <SummaryCard
+          title="本地网络"
+          icon={snapshot.network.ssid ? "wifi" : "antenna.radiowaves.left.and.right"}
+          color="systemBlue"
+          primary={snapshot.network.ssid || snapshot.network.interfaceName || "当前网络"}
+          secondary={localIp}
+          width={cardWidth}
+          height={57}
+        />
+        <SummaryCard
+          title="诊断策略"
+          icon="point.3.connected.trianglepath.dotted"
+          color="systemPurple"
+          primary={`${countryFlag(snapshot.policyExit.countryCode)} ${snapshot.policy.label}`}
+          secondary={
+            snapshot.policyExit.city ||
+            snapshot.policyExit.country ||
+            snapshot.policy.node ||
+            "出口信息不足"
+          }
+          width={cardWidth}
+          height={57}
         />
       </HStack>
+      <HealthRow snapshot={snapshot} height={47} />
     </VStack>
   )
 }
 
-function SmallWidget({ snapshot }: { snapshot: NetworkSnapshot }) {
+function SmallWidget({
+  snapshot,
+  refreshIntent,
+}: {
+  snapshot: NetworkSnapshot
+  refreshIntent?: any
+}) {
   const exit = snapshot.policyExit
   return (
-    <VStack alignment="leading" spacing={5} padding={11} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-      <Header snapshot={snapshot} compact />
-      <Spacer />
-      <HStack spacing={6}>
-        <Text font={26}>{countryFlag(exit.countryCode)}</Text>
-        <VStack alignment="leading" spacing={0}>
-          <Text font={14} fontWeight="bold" lineLimit={1} minScaleFactor={0.7}>
-            {exit.city || exit.country || "未知出口"}
-          </Text>
-          <Text font={9} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.65}>
-            {snapshot.policy.node || snapshot.policy.label}
-          </Text>
-        </VStack>
-      </HStack>
-      <Text font={10} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.55}>
-        {displaySnapshotIp(exit.ip, snapshot.hideAddresses)}
-      </Text>
-      <Spacer />
-      <HStack spacing={0}>
-        <Metric label="策略延迟" value={delayLabel(snapshot.policyLatencyMs)} color={delayColor(snapshot.policyLatencyMs)} />
-        <Metric label="HTTP/3" value={snapshot.http3 ? "可用" : snapshot.http3 === false ? "未协商" : "—"} />
-      </HStack>
+    <VStack alignment="leading" spacing={5} padding={10} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+      <Header snapshot={snapshot} compact refreshIntent={refreshIntent} />
+      <Card spacing={2} padding={7} height={58}>
+        <HStack spacing={6}>
+          <Text font={24}>{countryFlag(exit.countryCode)}</Text>
+          <VStack alignment="leading" spacing={0}>
+            <Text font={13} fontWeight="bold" lineLimit={1} minScaleFactor={0.65}>
+              {exit.city || exit.country || "未知出口"}
+            </Text>
+            <Text font={9} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.6}>
+              {snapshot.policy.node || snapshot.policy.label}
+            </Text>
+          </VStack>
+        </HStack>
+        <Text font={9} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.5}>
+          {`${displaySnapshotIp(exit.ip, snapshot.hideAddresses)} · ${snapshot.network.ssid || snapshot.network.interfaceName || "当前网络"}`}
+        </Text>
+      </Card>
+      <HealthRow snapshot={snapshot} height={45} />
     </VStack>
   )
 }
@@ -422,15 +541,21 @@ function AccessoryWidget({
 export function NetworkDiagWidget({
   snapshot,
   family,
+  displaySize,
+  refreshIntent,
 }: {
   snapshot: NetworkSnapshot
   family: WidgetFamilyName
+  displaySize: { width: number; height: number }
+  refreshIntent?: any
 }) {
   if (!snapshot.ok) return <ErrorView snapshot={snapshot} family={family} />
   const layout = widgetLayoutForFamily(family)
   if (layout === "circular") return <AccessoryWidget snapshot={snapshot} circular />
   if (layout === "rectangular") return <AccessoryWidget snapshot={snapshot} circular={false} />
-  if (layout === "small") return <SmallWidget snapshot={snapshot} />
-  if (layout === "medium") return <MediumWidget snapshot={snapshot} />
-  return <LargeWidget snapshot={snapshot} />
+  if (layout === "small") return <SmallWidget snapshot={snapshot} refreshIntent={refreshIntent} />
+  if (layout === "medium") {
+    return <MediumWidget snapshot={snapshot} width={displaySize.width} refreshIntent={refreshIntent} />
+  }
+  return <LargeWidget snapshot={snapshot} width={displaySize.width} refreshIntent={refreshIntent} />
 }
