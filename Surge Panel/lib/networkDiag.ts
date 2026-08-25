@@ -13,6 +13,7 @@ import {
   parseWidgetParameter,
   resolvedWidgetPrefs,
   widgetInstance,
+  widgetRefreshRequestedAt,
   type WidgetParameter,
   type WidgetPrefs,
 } from "./widgetPrefs"
@@ -657,7 +658,10 @@ export async function loadNetworkSnapshot(options?: {
   const cacheKey = networkSnapshotCacheKey(instance.id, prefs)
   const cached = readCachedSnapshot(cacheKey)
   const now = Date.now()
-  if (!options?.force && isSnapshotFresh(cached, prefs.refreshMin, now)) {
+  const forceRefresh =
+    options?.force === true ||
+    widgetRefreshRequestedAt() > (cached?.generatedAt ?? 0)
+  if (!forceRefresh && isSnapshotFresh(cached, prefs.refreshMin, now)) {
     return {
       ...cached,
       hideAddresses: hideAddresses(),

@@ -1,8 +1,9 @@
 // Surge Panel 首页 Tab UI（Scripting App 首页承载，Settings 里开启 Show Home Tab 后选择本脚本）
 // 与 index.tsx 的区别：组件被直接挂载到 Tab，不 present、不 exit，实例常驻。
-import { Script, useEffect } from "scripting"
+import { Script, Widget, useEffect } from "scripting"
 import { initStore, refreshNow, startPolling, stopPolling } from "./lib/store"
 import { SurgePanelApp } from "./app"
+import { markWidgetRefreshRequested } from "./lib/widgetPrefs"
 
 // 顶层代码只在 Tab 首次构建时执行一次
 initStore()
@@ -14,6 +15,8 @@ export default function HomeScreenView() {
     const off = Script.onHomeTabEvent((event) => {
       if (event === "selected") {
         void refreshNow().catch(() => {})
+        markWidgetRefreshRequested()
+        Widget.reloadAll()
         startPolling()
       } else if (event === "deselected") {
         stopPolling()

@@ -12,6 +12,7 @@ import { instanceToConfig } from "../lib/instances"
 import { getPolicyGroups, getRules } from "../lib/surgeApi"
 import {
   readWidgetPrefs,
+  markWidgetRefreshRequested,
   saveWidgetPrefs,
   widgetInstance,
   type WidgetPrefs,
@@ -33,6 +34,7 @@ export function WidgetSettingsView() {
   function persist(next: WidgetPrefs) {
     setPrefs(next)
     saveWidgetPrefs(next)
+    markWidgetRefreshRequested()
     Widget.reloadAll()
   }
 

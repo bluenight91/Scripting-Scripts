@@ -14,6 +14,7 @@ export type WidgetPrefs = {
 export type WidgetParameter = Partial<WidgetPrefs>
 
 const WIDGET_PREFS_KEY = "surge_panel_widget_prefs"
+const WIDGET_REFRESH_REQUEST_KEY = "surge_panel_widget_refresh_requested_at"
 
 export const DEFAULT_WIDGET_PREFS: WidgetPrefs = {
   instanceId: "",
@@ -99,4 +100,17 @@ export function widgetInstance(prefs: WidgetPrefs): {
 
 export function widgetPrefsStorageKey(): string {
   return WIDGET_PREFS_KEY
+}
+
+/** 标记下一轮 Widget 快照必须绕过 TTL；时间戳可同时覆盖多个不同参数的组件。 */
+export function markWidgetRefreshRequested(now = Date.now()): number {
+  const previous = Number(Storage.get(WIDGET_REFRESH_REQUEST_KEY) ?? 0)
+  const next = Math.max(now, previous + 1)
+  Storage.set(WIDGET_REFRESH_REQUEST_KEY, next)
+  return next
+}
+
+export function widgetRefreshRequestedAt(): number {
+  const value = Number(Storage.get(WIDGET_REFRESH_REQUEST_KEY) ?? 0)
+  return Number.isFinite(value) && value > 0 ? value : 0
 }
