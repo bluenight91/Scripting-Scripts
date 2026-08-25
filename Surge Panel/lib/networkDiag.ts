@@ -590,6 +590,20 @@ export function isSnapshotFresh(
   )
 }
 
+export function shouldRefreshSnapshot(
+  snapshot: Pick<NetworkSnapshot, "generatedAt"> | null,
+  refreshMin: number,
+  requestedAt: number,
+  force = false,
+  now = Date.now()
+): boolean {
+  return (
+    force ||
+    requestedAt > (snapshot?.generatedAt ?? 0) ||
+    !isSnapshotFresh(snapshot, refreshMin, now)
+  )
+}
+
 function hideAddresses(): boolean {
   const prefs = objectValue(Storage.get(PANEL_PREFS_KEY))
   return prefs.hideAddresses === true
@@ -658,10 +672,14 @@ export async function loadNetworkSnapshot(options?: {
   const cacheKey = networkSnapshotCacheKey(instance.id, prefs)
   const cached = readCachedSnapshot(cacheKey)
   const now = Date.now()
-  const forceRefresh =
-    options?.force === true ||
-    widgetRefreshRequestedAt() > (cached?.generatedAt ?? 0)
-  if (!forceRefresh && isSnapshotFresh(cached, prefs.refreshMin, now)) {
+  const shouldRefresh = shouldRefreshSnapshot(
+    cached,
+    prefs.refreshMin,
+    widgetRefreshRequestedAt(),
+    options?.force === true,
+    now
+  )
+  if (!shouldRefresh) {
     return {
       ...cached,
       hideAddresses: hideAddresses(),
