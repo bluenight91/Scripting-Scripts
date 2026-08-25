@@ -345,16 +345,16 @@ export const getScripts = (c: SurgeConfig) =>
 export const runCronScript = (c: SurgeConfig, scriptName: string) =>
   post<unknown>(c, "/v1/scripting/cron/evaluate", { script_name: scriptName })
 
-export const evaluateScript = (
+export const evaluateScript = <T = unknown>(
   c: SurgeConfig,
   scriptText: string,
   mockType = "cron",
   timeout = 5
 ) =>
-  post<unknown>(c, "/v1/scripting/evaluate", {
+  post<T>(c, "/v1/scripting/evaluate", {
     script_text: scriptText,
     mock_type: mockType,
-    timeout,
+    timeout: Math.max(1, Math.min(30, timeout)),
   })
 
 // ---------- 策略详情 ----------
