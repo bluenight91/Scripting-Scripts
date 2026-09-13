@@ -1,0 +1,29 @@
+{
+  "intentInputTypes" : [
+
+  ],
+  "version" : "1.0.0",
+  "iconImage" : "",
+  "icon" : "server.rack",
+  "author" : {
+    "homepage" : null,
+    "email" : null,
+    "name" : "Daniel"
+  },
+  "entry" : "index.tsx",
+  "contributors" : [
+
+  ],
+  "permissions" : null,
+  "remoteResource" : null,
+  "localizedNames" : {
+    "zh" : "frp 管理器"
+  },
+  "color" : "rgba(52, 120, 246, 1)",
+  "localizedDescriptions" : {
+    "zh" : "frp 内网穿透管理器：多服务器条目、frpc 代理状态 / 配置热重载 / Store 动态代理、frps 服务端信息与代理统计、客户端列表。"
+  },
+  "name" : "frp Manager",
+  "runInApp" : false,
+  "description" : "frp tunnel manager: multiple server entries, frpc proxy status / config reload / store proxies, frps server info, proxy stats and client list via the frp Admin API."
+}
