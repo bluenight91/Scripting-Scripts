@@ -27,6 +27,7 @@ import { probeHealthz } from "./lib/frpApi"
 import { ServerEditView } from "./views/ServerEditView"
 import { FrpcView } from "./views/FrpcView"
 import { FrpsView } from "./views/FrpsView"
+import { useMarkdownReleaseNotesSheet } from "./components/ReleaseNotesSheet"
 
 export type ServerStatus = "checking" | "online" | "offline"
 
@@ -36,6 +37,11 @@ export function serverIcon(kind: FrpServer["kind"]): string {
 
 export function FrpManagerApp() {
   const dismiss = Navigation.useDismiss()
+  const releaseNotes = useMarkdownReleaseNotesSheet({
+    markdownFile: "changelog.md",
+    storageKey: "frp-manager:release-notes:last-seen-hash",
+    title: "更新说明",
+  })
   const [servers, setServers] = useState<FrpServer[]>(loadServers)
   const [statuses, setStatuses] = useState<Record<string, ServerStatus>>({})
   const [editing, setEditing] = useState<FrpServer | null>(null)
@@ -131,6 +137,7 @@ export function FrpManagerApp() {
       <List
         navigationTitle="frp 管理器"
         toolbar={toolbar}
+        sheet={releaseNotes}
         refreshable={async () => { await probeAll(servers) }}
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       >

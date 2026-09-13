@@ -1,14 +1,16 @@
-# 更新说明
+## 本次更新（1.0.3）
 
-## 1.0.2
+- 更新后自动弹出更新说明：读取脚本目录下的 changelog.md，内容有变化时展示（与 Surge Panel 同款机制）
 
-- 修复主页没有退出按钮：toolbar 从 NavigationStack 移到内容视图（List）上，左上角 × 关闭、右上角 + 添加现在正常显示。
+## 更早（1.0.2）
 
-## 1.0.1
+- 修复主页没有退出按钮：toolbar 从 NavigationStack 移到内容视图（List）上，左上角 × 关闭、右上角 + 添加现在正常显示
 
-- 修复进入服务器详情页报错 `undefined is not an object (evaluating 'Data.fromRawString')`：Basic Auth 的 base64 编码改为纯 JS 实现，不再依赖 Scripting 未导出的 `Data` 类。
+## 更早（1.0.1）
 
-## 1.0.0
+- 修复进入服务器详情页报错 `undefined is not an object (evaluating 'Data.fromRawString')`：Basic Auth 的 base64 编码改为纯 JS 实现，不再依赖 Scripting 未导出的 `Data` 类
+
+## 更早（1.0.0）
 
 首个版本。
 
