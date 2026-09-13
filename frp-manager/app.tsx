@@ -127,9 +127,10 @@ export function FrpManagerApp() {
   )
 
   return (
-    <NavigationStack toolbar={toolbar}>
+    <NavigationStack>
       <List
         navigationTitle="frp 管理器"
+        toolbar={toolbar}
         refreshable={async () => { await probeAll(servers) }}
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       >
