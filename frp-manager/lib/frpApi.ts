@@ -1,9 +1,10 @@
 // frpc / frps Admin API 封装（v0.71 实测端点；Basic Auth，失败包体 {"Code","Msg"}）
-import { fetch, Data } from "scripting"
+import { fetch } from "scripting"
 import {
   prepareRequest,
   errorFromResponse,
   isNotFoundError,
+  b64EncodeUtf8,
   type HttpMethod,
 } from "./frpCore"
 
@@ -17,7 +18,7 @@ export type FrpConn = {
 const REQUEST_TIMEOUT = 15
 
 function b64(s: string): string {
-  return Data.fromRawString(s, "utf-8")!.toBase64String()
+  return b64EncodeUtf8(s)
 }
 
 function wrapFetchError(e: unknown): Error {

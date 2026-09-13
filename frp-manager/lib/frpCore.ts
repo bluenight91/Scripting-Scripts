@@ -2,6 +2,43 @@
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
 
+const B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+/** 纯 JS 的 UTF-8 → base64 编码（不依赖 App 运行时，Basic Auth 用） */
+export function b64EncodeUtf8(s: string): string {
+  const bytes: number[] = []
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i)
+    if (code < 0x80) {
+      bytes.push(code)
+    } else if (code < 0x800) {
+      bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f))
+    } else if (code >= 0xd800 && code <= 0xdbff && i + 1 < s.length) {
+      const lo = s.charCodeAt(i + 1)
+      if (lo >= 0xdc00 && lo <= 0xdfff) {
+        i++
+        const cp = 0x10000 + ((code & 0x3ff) << 10) + (lo & 0x3ff)
+        bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f))
+      } else {
+        bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f))
+      }
+    } else {
+      bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f))
+    }
+  }
+  let out = ""
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b0 = bytes[i]
+    const b1 = i + 1 < bytes.length ? bytes[i + 1] : undefined
+    const b2 = i + 2 < bytes.length ? bytes[i + 2] : undefined
+    out += B64_CHARS[b0 >> 2]
+    out += B64_CHARS[((b0 & 0x03) << 4) | (b1 !== undefined ? b1 >> 4 : 0)]
+    out += b1 !== undefined ? B64_CHARS[((b1 & 0x0f) << 2) | (b2 !== undefined ? b2 >> 6 : 0)] : "="
+    out += b2 !== undefined ? B64_CHARS[b2 & 0x3f] : "="
+  }
+  return out
+}
+
 /** 去掉 base 末尾斜杠后拼接 path，保证只出现一个斜杠 */
 export function joinUrl(base: string, path: string): string {
   const b = base.trim().replace(/\/+$/, "")
@@ -21,7 +58,7 @@ export function withQuery(url: string, query?: Record<string, string | undefined
   return `${url}${url.includes("?") ? "&" : "?"}${parts.join("&")}`
 }
 
-/** Basic Auth 头值；b64 由调用方注入（App 内用 Data，测试用 Buffer） */
+/** Basic Auth 头值；b64 由调用方注入（默认用本文件的 b64EncodeUtf8） */
 export function basicAuthValue(user: string, pass: string, b64: (s: string) => string): string {
   return `Basic ${b64(`${user}:${pass}`)}`
 }

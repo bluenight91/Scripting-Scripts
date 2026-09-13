@@ -1,5 +1,9 @@
 # 更新说明
 
+## 1.0.1
+
+- 修复进入服务器详情页报错 `undefined is not an object (evaluating 'Data.fromRawString')`：Basic Auth 的 base64 编码改为纯 JS 实现，不再依赖 Scripting 未导出的 `Data` 类。
+
 ## 1.0.0
 
 首个版本。
