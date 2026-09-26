@@ -317,7 +317,8 @@ export function maskHost(host: string): string {
 }
 
 export function displayHostPort(host: string, port: string, hidden: boolean): string {
-  const h = hidden ? maskHost(host) : host.trim()
+  const raw = hidden ? maskHost(host) : host.trim().replace(/^\[|\]$/g, "")
+  const h = raw.includes(":") ? `[${raw}]` : raw
   const p = port.trim()
   return p ? `${h}:${p}` : h
 }
