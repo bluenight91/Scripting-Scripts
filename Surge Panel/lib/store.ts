@@ -169,6 +169,16 @@ let tickCount = 0
 let started = false
 let trafficInFlight = false
 let authSuspended = false
+let connectionGeneration = 0
+
+function invalidateConnection() {
+  connectionGeneration++
+  trafficInFlight = false
+}
+
+function connectionIsCurrent(generation: number, activeId: string): boolean {
+  return generation === connectionGeneration && activeId === state.activeId
+}
 
 // 采样每 intervalSec 一次，但序列化整个历史数组写 Storage 没必要那么勤：
 // 攒在内存里，每 30 秒落盘一次，stopPolling / 切实例时强制 flush
@@ -192,6 +202,8 @@ function patch(partial: Partial<StoreState>) {
 }
 
 function applyActive(instances: SurgeInstance[], activeId: string, extra?: Partial<StoreState>) {
+  invalidateConnection()
+  authSuspended = false
   if (instances.length === 0) {
     persistInstanceState([], "")
     patch({
@@ -218,7 +230,6 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
     return
   }
   const inst = findInstance(instances, activeId) ?? instances[0]
-  authSuspended = false
   persistInstanceState(instances, inst.id)
   const history = readHistory(inst.id)
   const memLong = readMemLong(inst.id, history)
@@ -371,6 +382,7 @@ export function updateInstance(id: string, patchInst: Partial<SurgeInstance>, ke
     (key !== undefined && key !== previousKey)
   if (id === state.activeId) {
     const inst = findInstance(instances, id)!
+    if (connectionChanged) invalidateConnection()
     patch(connectionChanged ? { instances, config: instanceToConfig(inst) } : { instances })
     if (connectionChanged) {
       authSuspended = false
@@ -476,10 +488,14 @@ function connectionErrorState(error: unknown): Pick<StoreState, "error" | "error
 
 async function tickTraffic() {
   if (needsSetup() || trafficInFlight || authSuspended) return
+  const generation = connectionGeneration
+  const activeId = state.activeId
+  const config = state.config
   trafficInFlight = true
   const t0 = Date.now()
   try {
-    const traffic = await getTraffic(state.config)
+    const traffic = await getTraffic(config)
+    if (!connectionIsCurrent(generation, activeId)) return
     const source =
       traffic.interface && Object.keys(traffic.interface).length > 0
         ? traffic.interface
@@ -501,27 +517,37 @@ async function tickTraffic() {
       updatedAt: now,
     })
   } catch (e) {
+    if (!connectionIsCurrent(generation, activeId)) return
     const kind = surgeApiErrorKind(e)
     if (!state.samples || kind === "auth") {
       patch(connectionErrorState(e))
     }
   } finally {
-    trafficInFlight = false
+    if (connectionIsCurrent(generation, activeId)) trafficInFlight = false
   }
   return Date.now() - t0
 }
 
 function armTraffic(delay: number) {
   if (!started || !state.prefs.autoRefresh || authSuspended) return
+  const generation = connectionGeneration
+  const activeId = state.activeId
   speedTimer = setTimeout(async () => {
-    if (!started || !state.prefs.autoRefresh || authSuspended) return
+    if (
+      !started ||
+      !state.prefs.autoRefresh ||
+      authSuspended ||
+      !connectionIsCurrent(generation, activeId)
+    ) return
     const elapsed = (await tickTraffic()) ?? 0
+    if (!connectionIsCurrent(generation, activeId)) return
     armTraffic(Math.max(0, SPEED_REFRESH_MS - elapsed))
   }, delay)
 }
 
 async function tick() {
   if (needsSetup() || authSuspended) return
+  const generation = connectionGeneration
   const { config, prefs, samples: prev, history, speeds, activeId, metricsAvailable, traffic } = state
   const now = Date.now()
   try {
@@ -529,6 +555,7 @@ async function tick() {
       skipMetrics: metricsAvailable === false,
       traffic,
     })
+    if (!connectionIsCurrent(generation, activeId)) return
     const mem = fromMetrics ? gaugeValue(samples, "surge_memory_bytes") : null
     let newHistory = history
     let newMemLong = state.memLong
@@ -555,6 +582,7 @@ async function tick() {
       metricsAvailable: fromMetrics,
     })
   } catch (e) {
+    if (!connectionIsCurrent(generation, activeId)) return
     patch(connectionErrorState(e))
     if (surgeApiErrorKind(e) === "auth") return
   }
@@ -563,7 +591,8 @@ async function tick() {
   // 请求 Tab 可见时由该页自己轮询，这里不再重复拉最近请求
   if (tickCount % 3 === 1 && state.visibleTab !== 3) {
     try {
-      const { requests } = await getRecentRequests(state.config)
+      const { requests } = await getRecentRequests(config)
+      if (!connectionIsCurrent(generation, activeId)) return
       patch({
         failedRecent: requests.filter((r) => r.failed).length,
         rejectedRecent: requests.filter((r) => r.rejected || isRejectPolicy(r.policyName)).length,
@@ -575,9 +604,13 @@ async function tick() {
 }
 
 function scheduleNext() {
-  if (!state.prefs.autoRefresh || authSuspended) return
+  if (!started || !state.prefs.autoRefresh || authSuspended) return
+  const generation = connectionGeneration
+  const activeId = state.activeId
   pollTimer = setTimeout(async () => {
+    if (!started || !connectionIsCurrent(generation, activeId)) return
     await tick()
+    if (!started || !connectionIsCurrent(generation, activeId)) return
     scheduleNext()
   }, state.prefs.intervalSec * 1000)
 }
@@ -604,13 +637,17 @@ export async function startPolling() {
   if (needsSetup()) return
   authSuspended = false
   started = true
+  const generation = connectionGeneration
+  const activeId = state.activeId
   await Promise.all([tick(), tickTraffic()])
+  if (!started || !connectionIsCurrent(generation, activeId)) return
   scheduleNext()
   armTraffic(SPEED_REFRESH_MS)
 }
 
 export function stopPolling() {
   started = false
+  invalidateConnection()
   clearTimers()
   flushHistory()
 }
@@ -618,8 +655,11 @@ export function stopPolling() {
 export async function refreshNow() {
   if (needsSetup()) return
   if (started) clearTimers()
+  invalidateConnection()
+  const generation = connectionGeneration
+  const activeId = state.activeId
   authSuspended = false
   if (state.metricsAvailable === false) patch({ metricsAvailable: null })
   await Promise.all([tick(), tickTraffic()])
-  if (started && !authSuspended) restartPolling()
+  if (started && !authSuspended && connectionIsCurrent(generation, activeId)) restartPolling()
 }

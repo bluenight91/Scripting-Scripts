@@ -25,6 +25,28 @@ function ipv4Parts(host: string): number[] | null {
   return parts.every((part) => part >= 0 && part <= 255) ? parts : null
 }
 
+export function isValidIPv6(host: string): boolean {
+  const normalized = normalizeHost(host).toLowerCase()
+  const zoneParts = normalized.split("%")
+  if (zoneParts.length > 2 || (zoneParts.length === 2 && !/^[\w.-]+$/.test(zoneParts[1]))) return false
+  let address = zoneParts[0]
+  if (!address.includes(":")) return false
+
+  const ipv4Tail = address.slice(address.lastIndexOf(":") + 1)
+  if (ipv4Tail.includes(".")) {
+    if (!ipv4Parts(ipv4Tail)) return false
+    address = `${address.slice(0, address.lastIndexOf(":"))}:0:0`
+  }
+
+  if ((address.match(/::/g)?.length ?? 0) > 1) return false
+  const compressed = address.includes("::")
+  const sides = compressed ? address.split("::") : [address]
+  if (sides.length > 2) return false
+  const groups = sides.flatMap((side) => (side ? side.split(":") : []))
+  if (groups.some((group) => !/^[\da-f]{1,4}$/.test(group))) return false
+  return compressed ? groups.length < 8 : groups.length === 8
+}
+
 export function endpointScope(host: string): EndpointScope {
   const value = normalizeHost(host).toLowerCase().replace(/%[\w.-]+$/, "")
   if (value === "localhost" || value.endsWith(".localhost") || value === "::1") return "local"
@@ -43,7 +65,7 @@ export function endpointScope(host: string): EndpointScope {
     return "public"
   }
 
-  if (/^(?:fc|fd|fe8|fe9|fea|feb)/i.test(value)) return "lan"
+  if (isValidIPv6(value) && /^(?:fc|fd|fe8|fe9|fea|feb)/i.test(value)) return "lan"
   if (value.endsWith(".local") || (!value.includes(".") && !value.includes(":"))) return "lan"
   return "public"
 }
@@ -57,10 +79,13 @@ export function validateEndpoint(host: string, port: string, key: string): strin
   if (value.includes("[") || value.includes("]")) return "IPv6 地址的方括号不完整"
   if (/\s/.test(value)) return "主机地址不能包含空格"
   if ((value.match(/:/g)?.length ?? 0) === 1) return "主机不要包含端口；端口请填写在单独字段"
+  if (value.includes(":") && !isValidIPv6(value)) return "IPv6 地址格式无效"
   if (/^[\d.]+$/.test(value) && !ipv4Parts(value)) return "IPv4 地址格式无效"
+  if (value === "0.0.0.0" || value === "::") return "面板主机不能使用未指定监听地址"
 
-  const portNumber = Number(port.trim())
-  if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
+  const portText = port.trim()
+  const portNumber = Number(portText)
+  if (!/^\d{1,5}$/.test(portText) || portNumber < 1 || portNumber > 65535) {
     return "端口需为 1–65535 的整数"
   }
   if (!key.trim()) return "请填写 HTTP API Key"

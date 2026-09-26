@@ -114,9 +114,14 @@ function isInstance(v: unknown): v is SurgeInstance {
 
 export function loadInstanceState(): { instances: SurgeInstance[]; activeId: string } {
   const raw = Storage.get(INSTANCES_KEY)
-  if (Array.isArray(raw) && raw.length > 0 && raw.every(isInstance)) {
+  if (Array.isArray(raw) && raw.every(isInstance)) {
     credentialWarning = null
     const instances = (raw as StoredSurgeInstance[]).map(({ key: _key, ...instance }) => instance)
+    if (instances.length === 0) {
+      Storage.remove(LEGACY_CONFIG_KEY)
+      Storage.remove(LEGACY_HISTORY_KEY)
+      return { instances: [], activeId: "" }
+    }
     let migrated = false
     for (const stored of raw as StoredSurgeInstance[]) {
       if (!stored.key || keychainGet(stored.id)) continue
@@ -126,6 +131,8 @@ export function loadInstanceState(): { instances: SurgeInstance[]; activeId: str
     const savedId = Storage.get(ACTIVE_ID_KEY) as string | null
     const activeId = savedId && instances.some((i) => i.id === savedId) ? savedId : instances[0].id
     if (migrated) persistInstanceState(instances, activeId)
+    Storage.remove(LEGACY_CONFIG_KEY)
+    Storage.remove(LEGACY_HISTORY_KEY)
     return { instances, activeId }
   }
 
@@ -153,6 +160,8 @@ export function loadInstanceState(): { instances: SurgeInstance[]; activeId: str
     Storage.set(INSTANCES_KEY, [{ ...inst, key: legacyKey }])
     Storage.set(ACTIVE_ID_KEY, inst.id)
   }
+  Storage.remove(LEGACY_CONFIG_KEY)
+  Storage.remove(LEGACY_HISTORY_KEY)
   return { instances: [inst], activeId: inst.id }
 }
 

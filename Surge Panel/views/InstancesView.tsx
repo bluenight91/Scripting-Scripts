@@ -99,7 +99,7 @@ export function InstanceEditor({
   const [msg, setMsg] = useState<string | null>(null)
   const [msgKind, setMsgKind] = useState<SurgeApiErrorKind | null>(null)
   const [busy, setBusy] = useState(false)
-  const [pendingAction, setPendingAction] = useState<"delete" | "publicSave" | null>(null)
+  const [pendingAction, setPendingAction] = useState<"delete" | "publicSave" | "publicTest" | null>(null)
 
   function draft(): SurgeInstance {
     return {
@@ -136,7 +136,7 @@ export function InstanceEditor({
     })
   }
 
-  async function test() {
+  async function runTest() {
     const validation = validateEndpoint(host, port, key)
     if (validation) {
       setMsg(validation)
@@ -189,6 +189,20 @@ export function InstanceEditor({
     } finally {
       setBusy(false)
     }
+  }
+
+  async function test() {
+    const validation = validateEndpoint(host, port, key)
+    if (validation) {
+      setMsg(validation)
+      setMsgKind("validation")
+      return
+    }
+    if (endpointScope(host) === "public") {
+      setPendingAction("publicTest")
+      return
+    }
+    await runTest()
   }
 
   async function persist() {
@@ -244,7 +258,12 @@ export function InstanceEditor({
         onChanged: (shown: boolean) => {
           if (!shown) setPendingAction(null)
         },
-        title: pendingAction === "delete" ? "删除此实例？" : "保存疑似公网地址？",
+        title:
+          pendingAction === "delete"
+            ? "删除此实例？"
+            : pendingAction === "publicTest"
+              ? "连接疑似公网地址？"
+              : "保存疑似公网地址？",
         message={
           <Text>
             {pendingAction === "delete"
@@ -255,7 +274,9 @@ export function InstanceEditor({
         actions={
           pendingAction === "delete"
             ? <Button title="删除" role="destructive" action={() => { setPendingAction(null); void remove() }} />
-            : <Button title="仍然保存" role="confirm" action={() => { setPendingAction(null); void persist() }} />
+            : pendingAction === "publicTest"
+              ? <Button title="仍然测试" role="confirm" action={() => { setPendingAction(null); void runTest() }} />
+              : <Button title="仍然保存" role="confirm" action={() => { setPendingAction(null); void persist() }} />
         },
       }}
     >

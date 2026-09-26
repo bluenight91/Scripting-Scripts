@@ -324,6 +324,13 @@ export async function probeOutbound(c: SurgeConfig): Promise<ProbeResult> {
   })
   const latencyMs = Date.now() - t0
   if (!res.ok) {
+    if (res.status === 404 || res.status === 405 || res.status === 501) {
+      throw new SurgeApiError(
+        "protocol",
+        `目标不是可用的 Surge HTTP API（HTTP ${res.status}），请检查协议、主机与端口`,
+        res.status
+      )
+    }
     throw httpStatusError(res.status)
   }
   let mode: OutboundMode | undefined
