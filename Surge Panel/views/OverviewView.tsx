@@ -326,7 +326,7 @@ export function OverviewView() {
               首次安装不会自动连接。添加本机或网关的 Surge HTTP API，并填写 Key 后才会拉取数据。
             </Text>
             <Text font={13} foregroundStyle="secondaryLabel">
-              本机默认用 http（Surge 默认 http-api-tls = false）。若选 https，证书由 MITM CA 自签，面板会跳过系统链校验。
+              本机默认用 HTTP。局域网连接只应在可信网络使用；HTTPS 需安装并信任 Surge MITM CA。
             </Text>
             <HStack spacing={8} padding={{ top: 4 }} onTapGesture={() => setShowInst(true)}>
               <Image systemName="plus.circle.fill" foregroundStyle="systemBlue" font={18} />
@@ -343,7 +343,7 @@ export function OverviewView() {
 
         {!setup && state.error ? (
           <Text font={13} foregroundStyle="systemRed">
-            {connectErrorText(state.error)}
+            {connectErrorText(state.error, "连接错误", state.errorKind)}
           </Text>
         ) : null}
 

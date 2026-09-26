@@ -10,9 +10,10 @@ import {
   useState,
 } from "scripting"
 import { InstanceList } from "../components/InstanceList"
+import { endpointScope, validateEndpoint } from "../lib/connection"
 import {
   defaultInstance,
-  instanceToConfig,
+  getInstanceKey,
   type SurgeInstance,
 } from "../lib/instances"
 import {
@@ -21,7 +22,34 @@ import {
   switchInstance,
   updateInstance,
 } from "../lib/store"
-import { getEnvironment, probeOutbound } from "../lib/surgeApi"
+import {
+  getEnvironment,
+  probeOutbound,
+  surgeApiErrorKind,
+  surgeApiErrorMessage,
+  type SurgeApiErrorKind,
+} from "../lib/surgeApi"
+import { connectionErrorHint } from "../lib/ui"
+
+const HTTP_API_DOC = "https://manual.nssurge.com/tools/http-api.html"
+
+function securityNote(protocol: "http" | "https", host: string): string {
+  if (host.trim().toLowerCase().endsWith(".sgponte")) {
+    return "Surge 官方远程管理指南未将 HTTP API 列为 Ponte 支持能力；本面板不保证 .sgponte 连接可用。"
+  }
+  const scope = endpointScope(host)
+  if (scope === "local") {
+    return protocol === "https"
+      ? "本机 HTTPS 仍需安装并信任 Surge MITM CA。"
+      : "本机回环连接不会离开当前设备。"
+  }
+  if (scope === "public") {
+    return "疑似公网地址。不要将 Surge HTTP API 端口直接映射到互联网；请只在可信私网或受控隧道中使用。"
+  }
+  return protocol === "https"
+    ? "局域网 HTTPS 需在本机安装并信任 Surge MITM CA。"
+    : "局域网 HTTP 为明文传输，只应在可信网络中使用。"
+}
 
 export function InstancesView({ startAdding = false }: { startAdding?: boolean }) {
   const [editing, setEditing] = useState<SurgeInstance | null>(null)
@@ -66,27 +94,60 @@ export function InstanceEditor({
   const [protocol, setProtocol] = useState<"http" | "https">(initial.protocol)
   const [host, setHost] = useState(initial.host)
   const [port, setPort] = useState(initial.port)
-  const [key, setKey] = useState(initial.key)
+  const [key, setKey] = useState(getInstanceKey(initial.id))
+  const [probeMeta, setProbeMeta] = useState<Partial<SurgeInstance>>({})
   const [msg, setMsg] = useState<string | null>(null)
+  const [msgKind, setMsgKind] = useState<SurgeApiErrorKind | null>(null)
   const [busy, setBusy] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [pendingAction, setPendingAction] = useState<"delete" | "publicSave" | null>(null)
 
   function draft(): SurgeInstance {
     return {
       ...initial,
+      ...probeMeta,
       name: name.trim() || host.trim() || "未命名",
       protocol,
       host: host.trim(),
       port: port.trim(),
-      key,
     }
   }
 
+  function testingSavedConnection(): boolean {
+    return (
+      !isNew &&
+      protocol === initial.protocol &&
+      host.trim() === initial.host &&
+      port.trim() === initial.port &&
+      key === getInstanceKey(initial.id)
+    )
+  }
+
+  function clearProbe() {
+    setMsg(null)
+    setMsgKind(null)
+    setProbeMeta({
+      deviceName: undefined,
+      version: undefined,
+      build: undefined,
+      lastSeenAt: undefined,
+      lastLatencyMs: undefined,
+      lastError: undefined,
+      lastErrorAt: undefined,
+    })
+  }
+
   async function test() {
+    const validation = validateEndpoint(host, port, key)
+    if (validation) {
+      setMsg(validation)
+      setMsgKind("validation")
+      return
+    }
     setBusy(true)
     setMsg(null)
+    setMsgKind(null)
     try {
-      const cfg = instanceToConfig(draft())
+      const cfg = { protocol, host: host.trim(), port: port.trim(), key }
       const probe = await probeOutbound(cfg)
       let deviceName: string | undefined
       try {
@@ -103,29 +164,61 @@ export function InstanceEditor({
         deviceName,
       ].filter(Boolean)
       setMsg(bits.join(" · "))
-      if (!isNew) {
-        updateInstance(initial.id, {
-          deviceName,
-          version: probe.version,
-          build: probe.build,
-        })
+      const health: Partial<SurgeInstance> = {
+        deviceName,
+        version: probe.version,
+        build: probe.build,
+        lastSeenAt: Date.now(),
+        lastLatencyMs: probe.latencyMs,
+        lastError: undefined,
+        lastErrorAt: undefined,
       }
+      setProbeMeta(health)
+      if (testingSavedConnection()) updateInstance(initial.id, health)
     } catch (e) {
-      setMsg(`失败：${e}`)
+      const kind = surgeApiErrorKind(e)
+      const message = surgeApiErrorMessage(e)
+      setMsg(`失败：${message}。${connectionErrorHint(kind)}`)
+      setMsgKind(kind)
+      const failed: Partial<SurgeInstance> = {
+        lastError: message,
+        lastErrorAt: Date.now(),
+      }
+      setProbeMeta(failed)
+      if (testingSavedConnection()) updateInstance(initial.id, failed)
     } finally {
       setBusy(false)
     }
   }
 
-  async function save() {
+  async function persist() {
     const inst = draft()
-    if (isNew) {
-      addInstance(inst)
-      await switchInstance(inst.id)
-    } else {
-      updateInstance(inst.id, inst)
+    try {
+      if (isNew) {
+        addInstance(inst, key)
+        await switchInstance(inst.id)
+      } else {
+        updateInstance(inst.id, inst, key)
+      }
+      onDone?.()
+    } catch (e) {
+      setMsg(surgeApiErrorMessage(e))
+      setMsgKind("validation")
     }
-    onDone?.()
+  }
+
+  async function save() {
+    const validation = validateEndpoint(host, port, key)
+    if (validation) {
+      setMsg(validation)
+      setMsgKind("validation")
+      return
+    }
+    if (endpointScope(host) === "public") {
+      setPendingAction("publicSave")
+      return
+    }
+    await persist()
   }
 
   async function remove() {
@@ -141,40 +234,128 @@ export function InstanceEditor({
     <List
       navigationTitle={isNew ? "添加实例" : "编辑实例"}
       confirmationDialog={{
-        isPresented: confirmDelete,
-        onChanged: setConfirmDelete,
-        title: "删除此实例？",
-        message: <Text>不会停止远端 Surge，只从面板里移除这条连接。</Text>,
-        actions: <Button title="删除" role="destructive" action={() => { void remove() }} />,
+        isPresented: pendingAction !== null,
+        onChanged: (shown: boolean) => {
+          if (!shown) setPendingAction(null)
+        },
+        title: pendingAction === "delete" ? "删除此实例？" : "保存疑似公网地址？",
+        message={
+          <Text>
+            {pendingAction === "delete"
+              ? "不会停止远端 Surge，只从面板里移除这条连接。"
+              : "官方不建议将管理端口暴露到互联网。仅当此地址实际位于可信私网或受控隧道中时继续。"}
+          </Text>
+        },
+        actions={
+          pendingAction === "delete"
+            ? <Button title="删除" role="destructive" action={() => { setPendingAction(null); void remove() }} />
+            : <Button title="仍然保存" role="confirm" action={() => { setPendingAction(null); void persist() }} />
+        },
       }}
     >
+      <Section
+        header={<Text>快速设置</Text>}
+        footer={<Text font={13}>预设只填写面板连接地址；Surge 侧监听配置见下方说明。</Text>}
+      >
+        <Button
+          title="本机 Surge"
+          systemImage="iphone"
+          action={() => {
+            clearProbe()
+            setName(name === "本机" || !name.trim() ? "本机" : name)
+            setProtocol("http")
+            setHost("127.0.0.1")
+            setPort("6166")
+          }}
+        />
+        <Button
+          title="局域网 Surge 网关"
+          systemImage="network"
+          action={() => {
+            clearProbe()
+            setName(name === "本机" || !name.trim() ? "网关" : name)
+            setProtocol("http")
+            setHost("")
+            setPort("6166")
+          }}
+        />
+      </Section>
       <Section>
         <TextField label={<Text>名称</Text>} value={name} onChanged={setName} prompt="本机 / 网关" />
-        <Picker title="协议" pickerStyle="segmented" value={protocol} onChanged={(v: string) => setProtocol(v as "http" | "https")}>
+        <Picker
+          title="协议"
+          pickerStyle="segmented"
+          value={protocol}
+          onChanged={(v: string) => {
+            clearProbe()
+            setProtocol(v as "http" | "https")
+          }}
+        >
           <Text tag="http">http</Text>
           <Text tag="https">https</Text>
         </Picker>
-        <TextField label={<Text>主机</Text>} value={host} onChanged={setHost} prompt="127.0.0.1" />
-        <TextField label={<Text>端口</Text>} value={port} onChanged={setPort} prompt="6166" />
-        <SecureField label={<Text>API Key</Text>} value={key} onChanged={setKey} prompt="X-Key" />
+        <TextField
+          label={<Text>主机</Text>}
+          value={host}
+          onChanged={(value: string) => {
+            clearProbe()
+            setHost(value)
+          }}
+          prompt="127.0.0.1"
+        />
+        <TextField
+          label={<Text>端口</Text>}
+          value={port}
+          onChanged={(value: string) => {
+            clearProbe()
+            setPort(value)
+          }}
+          prompt="6166"
+        />
+        <SecureField
+          label={<Text>API Key</Text>}
+          value={key}
+          onChanged={(value: string) => {
+            clearProbe()
+            setKey(value)
+          }}
+          prompt="X-Key"
+        />
       </Section>
       <Section
         footer={
-          <Text font={13}>
-            {msg
-              ? msg
-              : protocol === "https"
-                ? "HTTPS 使用 Surge MITM 自签证书，面板会跳过系统链校验。本机默认 http-api-tls = false，一般用 http。"
-                : "用 GET /v1/outbound 测试连通。本机默认 http-api-tls = false。"}
+          <Text font={13} foregroundStyle={msgKind ? "systemRed" : "secondaryLabel"}>
+            {msg ?? securityNote(protocol, host)}
           </Text>
         }
       >
         <Button title={busy ? "测试中…" : "测试连通"} systemImage="antenna.radiowaves.left.and.right" disabled={busy} action={() => { void test() }} />
         <Button title="保存" systemImage="checkmark.circle" action={() => { void save() }} />
       </Section>
+      <Section
+        header={<Text>Surge 侧配置</Text>}
+        footer={
+          <Text font={13}>
+            {endpointScope(host) === "local"
+              ? "[General]\nhttp-api = YOUR_KEY@127.0.0.1:6166\nhttp-api-tls = false"
+              : "[General]\nhttp-api = YOUR_KEY@0.0.0.0:6166\nhttp-api-tls = false\n\n面板主机应填写 Surge 设备的实际局域网 IP，而不是 0.0.0.0。"}
+          </Text>
+        }
+      >
+        {protocol === "https" ? (
+          <Text font={13} foregroundStyle="secondaryLabel">
+            HTTPS 需先配置 MITM CA，将 CA 安装到本机并在系统设置中设为信任，再把 http-api-tls 改为 true。
+          </Text>
+        ) : null}
+        <Button
+          title="查看 Surge HTTP API 官方说明"
+          systemImage="safari"
+          action={() => { void Safari.present(HTTP_API_DOC, false) }}
+        />
+      </Section>
       {!isNew ? (
         <Section>
-          <Button title="删除实例" role="destructive" systemImage="trash" action={() => setConfirmDelete(true)} />
+          <Button title="删除实例" role="destructive" systemImage="trash" action={() => setPendingAction("delete")} />
         </Section>
       ) : null}
       {onDone ? (

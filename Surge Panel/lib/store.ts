@@ -4,7 +4,10 @@ import {
   fetchOverviewSamples,
   getRecentRequests,
   getTraffic,
+  surgeApiErrorKind,
+  surgeApiErrorMessage,
   type SurgeConfig,
+  type SurgeApiErrorKind,
   type TrafficEntry,
   type TrafficSnapshot,
 } from "./surgeApi"
@@ -13,10 +16,13 @@ import {
   findInstance,
   historyKey,
   memLongKey,
+  getInstanceKey,
   instanceIsReady,
   instanceToConfig,
   loadInstanceState,
   persistInstanceState,
+  removeInstanceKey,
+  setInstanceKey,
   EMPTY_INSTANCE,
   type SurgeInstance,
 } from "./instances"
@@ -55,6 +61,7 @@ export type StoreState = {
   prevSamples: MetricSample[] | null
   updatedAt: number | null
   error: string | null
+  errorKind: SurgeApiErrorKind | null
   running: boolean
   speeds: { inSpeed: number; outSpeed: number }
   peakSpeeds: { inSpeed: number; outSpeed: number }
@@ -140,6 +147,7 @@ let state: StoreState = {
   prevSamples: null,
   updatedAt: null,
   error: null,
+  errorKind: null,
   running: false,
   speeds: { inSpeed: 0, outSpeed: 0 },
   peakSpeeds: maxSpeedFromHistory(bootHistory),
@@ -160,6 +168,7 @@ let speedTimer: ReturnType<typeof setTimeout> | null = null
 let tickCount = 0
 let started = false
 let trafficInFlight = false
+let authSuspended = false
 
 // 采样每 intervalSec 一次，但序列化整个历史数组写 Storage 没必要那么勤：
 // 攒在内存里，每 30 秒落盘一次，stopPolling / 切实例时强制 flush
@@ -200,6 +209,7 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
       failedRecent: 0,
       rejectedRecent: 0,
       error: null,
+      errorKind: null,
       running: false,
       updatedAt: null,
       metricsAvailable: null,
@@ -208,6 +218,7 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
     return
   }
   const inst = findInstance(instances, activeId) ?? instances[0]
+  authSuspended = false
   persistInstanceState(instances, inst.id)
   const history = readHistory(inst.id)
   const memLong = readMemLong(inst.id, history)
@@ -227,6 +238,7 @@ function applyActive(instances: SurgeInstance[], activeId: string, extra?: Parti
     failedRecent: 0,
     rejectedRecent: 0,
     error: null,
+    errorKind: null,
     running: false,
     updatedAt: null,
     metricsAvailable: null,
@@ -339,22 +351,40 @@ export function setVisibleTab(index: number) {
 
 /** 更新当前实例的连接字段（兼容旧 saveConfig 调用） */
 export function saveConfig(config: SurgeConfig) {
-  updateInstance(state.activeId, config)
+  const { key, ...connection } = config
+  updateInstance(state.activeId, connection, key)
 }
 
-export function updateInstance(id: string, patchInst: Partial<SurgeInstance>) {
+export function updateInstance(id: string, patchInst: Partial<SurgeInstance>, key?: string) {
+  const previous = findInstance(state.instances, id)
+  if (!previous) throw new Error("实例不存在")
+  const previousKey = getInstanceKey(id)
+  if (key !== undefined && !setInstanceKey(id, key)) {
+    throw new Error("无法将 API Key 写入系统钥匙串，请更新 Scripting 后重试")
+  }
   const instances = state.instances.map((i) => (i.id === id ? { ...i, ...patchInst } : i))
   persistInstanceState(instances, state.activeId)
+  const connectionChanged =
+    (patchInst.protocol !== undefined && patchInst.protocol !== previous.protocol) ||
+    (patchInst.host !== undefined && patchInst.host !== previous.host) ||
+    (patchInst.port !== undefined && patchInst.port !== previous.port) ||
+    (key !== undefined && key !== previousKey)
   if (id === state.activeId) {
     const inst = findInstance(instances, id)!
-    patch({ instances, config: instanceToConfig(inst) })
-    void connectActive()
+    patch(connectionChanged ? { instances, config: instanceToConfig(inst) } : { instances })
+    if (connectionChanged) {
+      authSuspended = false
+      void connectActive()
+    }
   } else {
     patch({ instances })
   }
 }
 
-export function addInstance(inst: SurgeInstance) {
+export function addInstance(inst: SurgeInstance, key: string) {
+  if (!setInstanceKey(inst.id, key)) {
+    throw new Error("无法将 API Key 写入系统钥匙串，请更新 Scripting 后重试")
+  }
   const instances = [...state.instances, inst]
   persistInstanceState(instances, state.activeId)
   patch({ instances })
@@ -362,6 +392,7 @@ export function addInstance(inst: SurgeInstance) {
 
 export async function connectActive() {
   if (!instanceIsReady(activeInstance())) return
+  authSuspended = false
   if (started) await refreshNow()
   else await startPolling()
 }
@@ -388,6 +419,7 @@ export async function deleteInstance(id: string) {
     persistInstanceState(instances, state.activeId)
     patch({ instances })
   }
+  removeInstanceKey(id)
 }
 
 // ---------- Tab 跳转 ----------
@@ -431,8 +463,19 @@ function aggregateCurrentSpeeds(entries: Record<string, TrafficEntry>): {
   return { inSpeed, outSpeed }
 }
 
+function connectionErrorState(error: unknown): Pick<StoreState, "error" | "errorKind" | "running" | "updatedAt"> {
+  const kind = surgeApiErrorKind(error)
+  if (kind === "auth") authSuspended = true
+  return {
+    error: surgeApiErrorMessage(error),
+    errorKind: kind,
+    running: state.traffic !== null,
+    updatedAt: Date.now(),
+  }
+}
+
 async function tickTraffic() {
-  if (needsSetup() || trafficInFlight) return
+  if (needsSetup() || trafficInFlight || authSuspended) return
   trafficInFlight = true
   const t0 = Date.now()
   try {
@@ -458,8 +501,9 @@ async function tickTraffic() {
       updatedAt: now,
     })
   } catch (e) {
-    if (!state.samples) {
-      patch({ error: String(e), running: false, updatedAt: Date.now() })
+    const kind = surgeApiErrorKind(e)
+    if (!state.samples || kind === "auth") {
+      patch(connectionErrorState(e))
     }
   } finally {
     trafficInFlight = false
@@ -468,16 +512,16 @@ async function tickTraffic() {
 }
 
 function armTraffic(delay: number) {
-  if (!started || !state.prefs.autoRefresh) return
+  if (!started || !state.prefs.autoRefresh || authSuspended) return
   speedTimer = setTimeout(async () => {
-    if (!started || !state.prefs.autoRefresh) return
+    if (!started || !state.prefs.autoRefresh || authSuspended) return
     const elapsed = (await tickTraffic()) ?? 0
     armTraffic(Math.max(0, SPEED_REFRESH_MS - elapsed))
   }, delay)
 }
 
 async function tick() {
-  if (needsSetup()) return
+  if (needsSetup() || authSuspended) return
   const { config, prefs, samples: prev, history, speeds, activeId, metricsAvailable, traffic } = state
   const now = Date.now()
   try {
@@ -504,17 +548,15 @@ async function tick() {
       prevSamples: prev ?? null,
       updatedAt: now,
       error: null,
+      errorKind: null,
       running: true,
       history: newHistory,
       memLong: newMemLong,
       metricsAvailable: fromMetrics,
     })
   } catch (e) {
-    patch({
-      error: String(e),
-      running: state.traffic !== null,
-      updatedAt: now,
-    })
+    patch(connectionErrorState(e))
+    if (surgeApiErrorKind(e) === "auth") return
   }
 
   tickCount++
@@ -533,7 +575,7 @@ async function tick() {
 }
 
 function scheduleNext() {
-  if (!state.prefs.autoRefresh) return
+  if (!state.prefs.autoRefresh || authSuspended) return
   pollTimer = setTimeout(async () => {
     await tick()
     scheduleNext()
@@ -560,6 +602,7 @@ function restartPolling() {
 export async function startPolling() {
   if (started) return
   if (needsSetup()) return
+  authSuspended = false
   started = true
   await Promise.all([tick(), tickTraffic()])
   scheduleNext()
@@ -574,6 +617,9 @@ export function stopPolling() {
 
 export async function refreshNow() {
   if (needsSetup()) return
+  if (started) clearTimers()
+  authSuspended = false
   if (state.metricsAvailable === false) patch({ metricsAvailable: null })
   await Promise.all([tick(), tickTraffic()])
+  if (started && !authSuspended) restartPolling()
 }
