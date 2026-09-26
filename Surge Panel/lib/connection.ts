@@ -21,8 +21,26 @@ export function formatEndpoint(host: string, port: string): string {
 
 function ipv4Parts(host: string): number[] | null {
   if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return null
-  const parts = host.split(".").map(Number)
+  const raw = host.split(".")
+  if (raw.some((part) => part.length > 1 && part.startsWith("0"))) return null
+  const parts = raw.map(Number)
   return parts.every((part) => part >= 0 && part <= 255) ? parts : null
+}
+
+function isEncodedNumericHost(host: string): boolean {
+  const numericLabel = /^(?:0x[\da-f]+|0[0-7]+|\d+|\d+e\d+)$/i
+  const labels = host.split(".")
+  return labels.length > 0 && labels.every((label) => numericLabel.test(label))
+}
+
+function isValidHostname(host: string): boolean {
+  if (host.length > 253) return false
+  return host.split(".").every(
+    (label) =>
+      label.length >= 1 &&
+      label.length <= 63 &&
+      /^[a-z\d](?:[a-z\d-]*[a-z\d])?$/i.test(label)
+  )
 }
 
 export function isValidIPv6(host: string): boolean {
@@ -82,6 +100,10 @@ export function validateEndpoint(host: string, port: string, key: string): strin
   if (value.includes(":") && !isValidIPv6(value)) return "IPv6 地址格式无效"
   if (/^[\d.]+$/.test(value) && !ipv4Parts(value)) return "IPv4 地址格式无效"
   if (value === "0.0.0.0" || value === "::") return "面板主机不能使用未指定监听地址"
+  if (!value.includes(":") && !ipv4Parts(value)) {
+    if (isEncodedNumericHost(value)) return "不支持非标准数字地址，请使用规范 IPv4、IPv6 或域名"
+    if (!isValidHostname(value)) return "主机名格式无效"
+  }
 
   const portText = port.trim()
   const portNumber = Number(portText)

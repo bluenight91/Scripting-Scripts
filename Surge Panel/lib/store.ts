@@ -170,6 +170,7 @@ let started = false
 let trafficInFlight = false
 let authSuspended = false
 let connectionGeneration = 0
+let schedulerGeneration = 0
 
 function invalidateConnection() {
   connectionGeneration++
@@ -178,6 +179,10 @@ function invalidateConnection() {
 
 function connectionIsCurrent(generation: number, activeId: string): boolean {
   return generation === connectionGeneration && activeId === state.activeId
+}
+
+function schedulerIsCurrent(generation: number): boolean {
+  return generation === schedulerGeneration
 }
 
 // 采样每 intervalSec 一次，但序列化整个历史数组写 Storage 没必要那么勤：
@@ -531,16 +536,18 @@ async function tickTraffic() {
 function armTraffic(delay: number) {
   if (!started || !state.prefs.autoRefresh || authSuspended) return
   const generation = connectionGeneration
+  const scheduler = schedulerGeneration
   const activeId = state.activeId
   speedTimer = setTimeout(async () => {
     if (
       !started ||
       !state.prefs.autoRefresh ||
       authSuspended ||
+      !schedulerIsCurrent(scheduler) ||
       !connectionIsCurrent(generation, activeId)
     ) return
     const elapsed = (await tickTraffic()) ?? 0
-    if (!connectionIsCurrent(generation, activeId)) return
+    if (!schedulerIsCurrent(scheduler) || !connectionIsCurrent(generation, activeId)) return
     armTraffic(Math.max(0, SPEED_REFRESH_MS - elapsed))
   }, delay)
 }
@@ -606,11 +613,20 @@ async function tick() {
 function scheduleNext() {
   if (!started || !state.prefs.autoRefresh || authSuspended) return
   const generation = connectionGeneration
+  const scheduler = schedulerGeneration
   const activeId = state.activeId
   pollTimer = setTimeout(async () => {
-    if (!started || !connectionIsCurrent(generation, activeId)) return
+    if (
+      !started ||
+      !schedulerIsCurrent(scheduler) ||
+      !connectionIsCurrent(generation, activeId)
+    ) return
     await tick()
-    if (!started || !connectionIsCurrent(generation, activeId)) return
+    if (
+      !started ||
+      !schedulerIsCurrent(scheduler) ||
+      !connectionIsCurrent(generation, activeId)
+    ) return
     scheduleNext()
   }, state.prefs.intervalSec * 1000)
 }
@@ -627,6 +643,7 @@ function clearTimers() {
 }
 
 function restartPolling() {
+  schedulerGeneration++
   clearTimers()
   scheduleNext()
   armTraffic(SPEED_REFRESH_MS)
@@ -637,16 +654,23 @@ export async function startPolling() {
   if (needsSetup()) return
   authSuspended = false
   started = true
+  schedulerGeneration++
   const generation = connectionGeneration
+  const scheduler = schedulerGeneration
   const activeId = state.activeId
   await Promise.all([tick(), tickTraffic()])
-  if (!started || !connectionIsCurrent(generation, activeId)) return
+  if (
+    !started ||
+    !schedulerIsCurrent(scheduler) ||
+    !connectionIsCurrent(generation, activeId)
+  ) return
   scheduleNext()
   armTraffic(SPEED_REFRESH_MS)
 }
 
 export function stopPolling() {
   started = false
+  schedulerGeneration++
   invalidateConnection()
   clearTimers()
   flushHistory()
@@ -654,12 +678,19 @@ export function stopPolling() {
 
 export async function refreshNow() {
   if (needsSetup()) return
+  schedulerGeneration++
   if (started) clearTimers()
   invalidateConnection()
   const generation = connectionGeneration
+  const scheduler = schedulerGeneration
   const activeId = state.activeId
   authSuspended = false
   if (state.metricsAvailable === false) patch({ metricsAvailable: null })
   await Promise.all([tick(), tickTraffic()])
-  if (started && !authSuspended && connectionIsCurrent(generation, activeId)) restartPolling()
+  if (
+    started &&
+    !authSuspended &&
+    schedulerIsCurrent(scheduler) &&
+    connectionIsCurrent(generation, activeId)
+  ) restartPolling()
 }
