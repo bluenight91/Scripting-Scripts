@@ -230,6 +230,12 @@ export function InstanceEditor({
     }
   }
 
+  const localEndpoint = endpointScope(host) === "local"
+  const setupPort = port.trim() || "6166"
+  const setupSnippet =
+    `[General]\nhttp-api = YOUR_KEY@${localEndpoint ? "127.0.0.1" : "0.0.0.0"}:${setupPort}` +
+    `\nhttp-api-tls = ${protocol === "https" ? "true" : "false"}`
+
   return (
     <List
       navigationTitle={isNew ? "添加实例" : "编辑实例"}
@@ -262,7 +268,7 @@ export function InstanceEditor({
           systemImage="iphone"
           action={() => {
             clearProbe()
-            setName(name === "本机" || !name.trim() ? "本机" : name)
+            setName(!name.trim() || name === "本机" || name === "网关" ? "本机" : name)
             setProtocol("http")
             setHost("127.0.0.1")
             setPort("6166")
@@ -273,7 +279,7 @@ export function InstanceEditor({
           systemImage="network"
           action={() => {
             clearProbe()
-            setName(name === "本机" || !name.trim() ? "网关" : name)
+            setName(!name.trim() || name === "本机" || name === "网关" ? "网关" : name)
             setProtocol("http")
             setHost("")
             setPort("6166")
@@ -336,9 +342,9 @@ export function InstanceEditor({
         header={<Text>Surge 侧配置</Text>}
         footer={
           <Text font={13}>
-            {endpointScope(host) === "local"
-              ? "[General]\nhttp-api = YOUR_KEY@127.0.0.1:6166\nhttp-api-tls = false"
-              : "[General]\nhttp-api = YOUR_KEY@0.0.0.0:6166\nhttp-api-tls = false\n\n面板主机应填写 Surge 设备的实际局域网 IP，而不是 0.0.0.0。"}
+            {localEndpoint
+              ? setupSnippet
+              : `${setupSnippet}\n\n面板主机应填写 Surge 设备的实际局域网 IP，而不是 0.0.0.0。`}
           </Text>
         }
       >
