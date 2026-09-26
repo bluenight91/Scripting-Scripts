@@ -1,6 +1,5 @@
 // Surge HTTP API 封装（端点文档：https://manual.nssurge.com/others/http-api.html）
 import { fetch } from "scripting"
-import { hostForUrl } from "./connection"
 import { parsePrometheus, uptimeSecondsFromStartTime, type MetricSample } from "./metrics"
 
 export type SurgeConfig = {
@@ -11,87 +10,43 @@ export type SurgeConfig = {
 }
 
 export const DEFAULT_CONFIG: SurgeConfig = {
-  // Surge 默认 http-api-tls = false；HTTPS 需在控制端安装并信任 Surge MITM CA
+  // Surge 默认 http-api-tls = false；HTTPS 用 MITM 自签证书，请求需跳过系统链校验
   protocol: "http",
   host: "127.0.0.1",
   port: "6166",
   key: "",
 }
 
-export type SurgeApiErrorKind =
-  | "validation"
-  | "auth"
-  | "timeout"
-  | "refused"
-  | "tls"
-  | "protocol"
-  | "unsupported"
-  | "http"
-  | "network"
-
-export class SurgeApiError extends Error {
-  kind: SurgeApiErrorKind
-  status?: number
-
-  constructor(kind: SurgeApiErrorKind, message: string, status?: number) {
-    super(message)
-    this.name = "SurgeApiError"
-    this.kind = kind
-    this.status = status
-  }
+/** Surge HTTP API 的 TLS 证书由 MITM CA 签发，系统链校验会失败；鉴权靠 X-Key */
+function allowInsecure(_c: SurgeConfig): boolean {
+  return true
 }
 
-export function surgeApiErrorKind(error: unknown): SurgeApiErrorKind {
-  return error instanceof SurgeApiError ? error.kind : "network"
+function httpStatusError(status: number): Error {
+  if (status === 401) return new Error("Key 无效")
+  return new Error(`HTTP ${status}`)
 }
 
-export function surgeApiErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-/** Scripting 的此选项只允许明文 HTTP，不会跳过 HTTPS 证书校验。 */
-function allowInsecure(c: SurgeConfig): boolean {
-  return c.protocol === "http"
-}
-
-function httpStatusError(status: number): SurgeApiError {
-  if (status === 401 || status === 403) {
-    return new SurgeApiError("auth", "API Key 无效或没有访问权限", status)
-  }
-  if (status === 404 || status === 405 || status === 501) {
-    return new SurgeApiError("unsupported", `当前 Surge 不支持此端点（HTTP ${status}）`, status)
-  }
-  return new SurgeApiError("http", `Surge 返回 HTTP ${status}`, status)
-}
-
-function wrapFetchError(e: unknown): SurgeApiError {
-  if (e instanceof SurgeApiError) return e
+function wrapFetchError(e: unknown): Error {
   const s = String(e)
-  if (/wrong version|unexpected.*response|SSL.*record|plain HTTP|protocol error/i.test(s)) {
-    return new SurgeApiError("protocol", "HTTP/HTTPS 协议可能与 Surge 的 http-api-tls 设置不一致")
-  }
   if (/TLS|TlsHandler|证书|certificate/i.test(s)) {
-    return new SurgeApiError(
-      "tls",
-      "HTTPS 证书验证失败。请在本机安装并信任 Surge MITM CA，并确认访问地址与证书匹配"
+    return new Error(
+      `${s}。Surge HTTPS API 使用 MITM 自签证书。可改用 http（默认 http-api-tls = false），或确认 Scripting 已允许本地网络。`
     )
   }
   if (/401|unauthorized/i.test(s)) {
-    return new SurgeApiError("auth", "API Key 无效或没有访问权限")
+    return new Error("Key 无效")
   }
   if (/timeout|timed?\s*out|ETIMEDOUT|超时/i.test(s)) {
-    return new SurgeApiError("timeout", "连接超时")
+    return new Error("连接超时。请确认 HTTP API 已开启，并允许 Scripting 访问本地网络")
   }
-  if (/ECONNREFUSED|connection refused|无法连接|拒绝连接/i.test(s)) {
-    return new SurgeApiError("refused", "连接被拒绝")
-  }
-  return new SurgeApiError("network", e instanceof Error ? e.message : s)
+  return e instanceof Error ? e : new Error(s)
 }
 
-export function urlOf(c: SurgeConfig, path: string): string {
+function urlOf(c: SurgeConfig, path: string): string {
   const port = c.port.trim()
   const portPart = port ? `:${port}` : ""
-  return `${c.protocol}://${hostForUrl(c.host)}${portPart}${path}`
+  return `${c.protocol}://${c.host.trim()}${portPart}${path}`
 }
 
 async function request<T>(
@@ -118,11 +73,7 @@ async function request<T>(
   }
   const text = await res.text()
   if (!text || text === "OK") return undefined as T
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    throw new SurgeApiError("protocol", "响应不是 Surge HTTP API 的 JSON，请检查协议、主机与端口")
-  }
+  return JSON.parse(text) as T
 }
 
 function get<T>(c: SurgeConfig, path: string): Promise<T> {
@@ -324,13 +275,6 @@ export async function probeOutbound(c: SurgeConfig): Promise<ProbeResult> {
   })
   const latencyMs = Date.now() - t0
   if (!res.ok) {
-    if (res.status === 404 || res.status === 405 || res.status === 501) {
-      throw new SurgeApiError(
-        "protocol",
-        `目标不是可用的 Surge HTTP API（HTTP ${res.status}），请检查协议、主机与端口`,
-        res.status
-      )
-    }
     throw httpStatusError(res.status)
   }
   let mode: OutboundMode | undefined
@@ -338,7 +282,7 @@ export async function probeOutbound(c: SurgeConfig): Promise<ProbeResult> {
     const body = (await res.json()) as { mode?: OutboundMode }
     mode = body?.mode
   } catch {
-    throw new SurgeApiError("protocol", "响应不是 Surge HTTP API 的 JSON，请检查协议、主机与端口")
+    // 部分环境只关心连通
   }
   return {
     mode,
@@ -574,7 +518,7 @@ async function fallbackOverviewSamples(
   traffic?: TrafficSnapshot | null
 ): Promise<MetricSample[]> {
   const samples: MetricSample[] = []
-  const snap = traffic ?? (await getTraffic(c))
+  const snap = traffic ?? (await getTraffic(c).catch(() => null))
   if (snap) {
     const uptime = uptimeSecondsFromStartTime(snap.startTime)
     if (uptime !== null) {
@@ -584,16 +528,10 @@ async function fallbackOverviewSamples(
   const [active, dns] = await Promise.all([
     getActiveRequests(c)
       .then((r) => r.requests?.length ?? 0)
-      .catch((error) => {
-        if (surgeApiErrorKind(error) === "auth") throw error
-        return null as number | null
-      }),
+      .catch(() => null as number | null),
     getDns(c)
       .then((r) => r.dnsCache?.length ?? 0)
-      .catch((error) => {
-        if (surgeApiErrorKind(error) === "auth") throw error
-        return null as number | null
-      }),
+      .catch(() => null as number | null),
   ])
   if (active !== null) samples.push({ name: "surge_active_requests", labels: {}, value: active })
   if (dns !== null) samples.push({ name: "surge_dns_cache_entries", labels: {}, value: dns })

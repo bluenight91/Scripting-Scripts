@@ -82,7 +82,7 @@ export function MemoryDiagView() {
               <Text font={UI.titleFont} fontWeight="semibold">当前版本没有内存指标</Text>
               <Text font={13} foregroundStyle="secondaryLabel">{METRICS_HINT}</Text>
               <Text font={13} foregroundStyle="secondaryLabel">
-                Prometheus /metrics 需 Surge iOS 5.22+ 或 Mac 6.9+。没有该端点时，流量、策略、请求仍可用。
+                TestFlight 以及即将发布的 iOS 5.22 / Mac 6.9 才有 Prometheus /metrics。流量、策略、请求仍可用。
               </Text>
               <Button title="查看事件" systemImage="bell" action={() => openRequestsSegment("events")} />
             </PanelCard>
