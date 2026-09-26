@@ -2,7 +2,7 @@
 
 我在 iOS [Scripting App](https://scriptingapp.github.io/zh/index) 上编写的脚本合集。需已安装 Scripting 后使用。
 
-## Surge Panel 2.1
+## Surge Panel 2.0
 
 Surge HTTP API + Prometheus 监控面板。五个 Tab：总览、策略、流量、请求、设置。支持多个实例（本机 / 网关）热切换，可挂到 Scripting 首页 Tab。
 
@@ -11,9 +11,7 @@ Surge HTTP API + Prometheus 监控面板。五个 Tab：总览、策略、流量
 - [下载](./Surge%20Panel.scripting)
 - 更新说明：[changelog.md](./Surge%20Panel/changelog.md)
 
-使用前按官方格式在 Surge 开启 HTTP API，例如 `http-api = YOUR_KEY@127.0.0.1:6166`。导入后先添加实例并填写 Key，不会在未配置时自动连接。局域网连接需让 Surge 监听 `0.0.0.0`，但面板主机应填写设备实际 IP；不要将管理端口暴露到互联网。HTTPS（`http-api-tls = true`）需先安装并信任 Surge MITM CA。API Key 按实例保存在 iOS Keychain。
-
-Surge Panel 使用 HTTP API，不是 External Controller；不支持官方远程管理指南中的 Ponte 或 USB。完整配置、安全说明与故障排查见 [Surge Panel README](./Surge%20Panel/README.md)。`/metrics` 仅 iOS 5.22+ / Mac 6.9+；其它版本仍可使用主要功能，但没有内存图表。
+使用前在 Surge 开启 HTTP API（`http-api` + `http-api-key`）。导入后先添加实例并填写 Key，不会在未配置时自动连接。本机默认 http；若用 https（`http-api-tls`），面板会跳过 MITM 自签证书的系统校验。`/metrics` 仅 iOS 5.22+ / Mac 6.9+；商店版与 Mac 6.8 没有该端点，面板会改用其它 HTTP API，内存图表不可用。
 
 # 感谢
 
