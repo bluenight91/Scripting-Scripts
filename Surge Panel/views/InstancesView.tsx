@@ -264,20 +264,20 @@ export function InstanceEditor({
             : pendingAction === "publicTest"
               ? "连接疑似公网地址？"
               : "保存疑似公网地址？",
-        message={
+        message: (
           <Text>
             {pendingAction === "delete"
               ? "不会停止远端 Surge，只从面板里移除这条连接。"
               : "官方不建议将管理端口暴露到互联网。仅当此地址实际位于可信私网或受控隧道中时继续。"}
           </Text>
-        },
-        actions={
+        ),
+        actions: (
           pendingAction === "delete"
             ? <Button title="删除" role="destructive" action={() => { setPendingAction(null); void remove() }} />
             : pendingAction === "publicTest"
               ? <Button title="仍然测试" role="confirm" action={() => { setPendingAction(null); void runTest() }} />
               : <Button title="仍然保存" role="confirm" action={() => { setPendingAction(null); void persist() }} />
-        },
+        ),
       }}
     >
       <Section
