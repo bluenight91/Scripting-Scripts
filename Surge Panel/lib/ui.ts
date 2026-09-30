@@ -1,4 +1,5 @@
-import { Device, gradient, UIGlass, type Color, type DynamicShapeStyle } from "scripting"
+// UIGlass / Animation 是 Scripting 的全局对象，不在 "scripting" 模块导出里，从模块导入会得到 undefined
+import { Device, gradient, type Color, type DynamicShapeStyle } from "scripting"
 import type { SurgeApiErrorKind } from "./surgeApi"
 
 // 全屏与首页共用的设计令牌：4pt 网格、连续圆角、圆体等宽数字

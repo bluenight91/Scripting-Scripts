@@ -1,6 +1,5 @@
 // 设计组件：卡片、图标徽章、状态胶囊、指标块、主卡片、芯片栏、设置行
 import {
-  Animation,
   HStack,
   Image,
   Rectangle,
@@ -367,11 +366,14 @@ export const BARE_ROW = {
   listRowSeparator: "hidden" as const,
 }
 
+/** 页面背景：延伸到导航栏 / 标签栏下方，顶部不会出现与系统栏的色带接缝 */
+export const PAGE_BG = <Rectangle fill="clear" background={PAGE_BACKDROP} ignoresSafeArea />
+
 /** 列表页统一外观：inset 分组 + 淡色渐变背景 */
 export const LIST_STYLE = {
   listStyle: "insetGroup" as const,
   scrollContentBackground: "hidden" as const,
-  background: PAGE_BACKDROP,
+  background: PAGE_BG,
 }
 
 export function SearchField({
