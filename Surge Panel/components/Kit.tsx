@@ -7,10 +7,11 @@ import {
   ScrollView,
   Spacer,
   Text,
+  TextField,
   VStack,
   type Color,
 } from "scripting"
-import { cardBackground, controlSurface, HERO_GRADIENT, roundedShape, TONES, UI, type Tone } from "../lib/ui"
+import { cardBackground, controlSurface, HERO_GRADIENT, PAGE_BACKDROP, roundedShape, TONES, UI, type Tone } from "../lib/ui"
 
 export function Card({
   children,
@@ -366,7 +367,39 @@ export const BARE_ROW = {
   listRowSeparator: "hidden" as const,
 }
 
+/** 列表页统一外观：inset 分组 + 淡色渐变背景 */
+export const LIST_STYLE = {
+  listStyle: "insetGroup" as const,
+  scrollContentBackground: "hidden" as const,
+  background: PAGE_BACKDROP,
+}
+
+export function SearchField({
+  value,
+  onChanged,
+  prompt,
+}: {
+  value: string
+  onChanged: (v: string) => void
+  prompt: string
+}) {
+  return (
+    <HStack spacing={8}>
+      <Image systemName="magnifyingglass" font={14} foregroundStyle="tertiaryLabel" />
+      <TextField title="搜索" value={value} onChanged={onChanged} prompt={prompt} />
+      {value ? (
+        <Image
+          systemName="xmark.circle.fill"
+          font={15}
+          foregroundStyle="tertiaryLabel"
+          onTapGesture={() => onChanged("")}
+        />
+      ) : null}
+    </HStack>
+  )
+}
+
 export function latencyTone(ms: number): Tone {
-  return ms < 200 ? "green" : ms < 500 ? "orange" : "red"
+  return ms < 300 ? "green" : ms < 800 ? "orange" : "red"
 }
 
