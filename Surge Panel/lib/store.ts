@@ -50,7 +50,12 @@ export type Prefs = {
   memRangeMin: MemRangeMin
 }
 
-export type RequestsSegment = "active" | "recent" | "events" | "dns" | "rules"
+export type TabId = "dashboard" | "routing" | "activity" | "settings"
+export const TAB_ORDER: TabId[] = ["dashboard", "routing", "activity", "settings"]
+
+export type RoutingSegment = "groups" | "rules"
+export type ActivitySegment = "traffic" | "connections" | "dns" | "events"
+export type ConnectionsMode = "active" | "recent"
 
 export type StoreState = {
   instances: SurgeInstance[]
@@ -73,8 +78,10 @@ export type StoreState = {
   traffic: TrafficSnapshot | null
   /** null=未知；true=有 /metrics；false=商店版等无该端点，总览走 HTTP API 回退 */
   metricsAvailable: boolean | null
-  requestsSegment: RequestsSegment
-  visibleTab: number
+  routingSegment: RoutingSegment
+  activitySegment: ActivitySegment
+  connectionsMode: ConnectionsMode
+  visibleTab: TabId
 }
 
 const PREFS_KEY = "surge_panel_prefs"
@@ -158,8 +165,10 @@ let state: StoreState = {
   speedHistory: emptySpeedHistory(),
   traffic: null,
   metricsAvailable: null,
-  requestsSegment: "active",
-  visibleTab: 0,
+  routingSegment: "groups",
+  activitySegment: "traffic",
+  connectionsMode: "active",
+  visibleTab: "dashboard",
 }
 
 const listeners = new Set<() => void>()
@@ -360,9 +369,9 @@ export function clearHistory() {
   })
 }
 
-export function setVisibleTab(index: number) {
-  if (state.visibleTab === index) return
-  patch({ visibleTab: index })
+export function setVisibleTab(tab: TabId) {
+  if (state.visibleTab === tab) return
+  patch({ visibleTab: tab })
 }
 
 /** 更新当前实例的连接字段（兼容旧 saveConfig 调用） */
@@ -441,27 +450,34 @@ export async function deleteInstance(id: string) {
 
 // ---------- Tab 跳转 ----------
 
-let tabJump: ((index: number) => void) | null = null
+let tabJump: ((tab: TabId) => void) | null = null
 
-export function registerTabJump(fn: (index: number) => void) {
+export function registerTabJump(fn: (tab: TabId) => void) {
   tabJump = fn
   return () => {
     if (tabJump === fn) tabJump = null
   }
 }
 
-export function setRequestsSegment(segment: RequestsSegment) {
-  if (state.requestsSegment === segment) return
-  patch({ requestsSegment: segment })
+export function setRoutingSegment(segment: RoutingSegment) {
+  if (state.routingSegment === segment) return
+  patch({ routingSegment: segment })
 }
 
-export function openRequestsSegment(segment: RequestsSegment) {
-  patch({ requestsSegment: segment })
-  tabJump?.(3)
+export function setActivitySegment(segment: ActivitySegment) {
+  if (state.activitySegment === segment) return
+  patch({ activitySegment: segment })
 }
 
-export function openTrafficTab() {
-  tabJump?.(2)
+export function setConnectionsMode(mode: ConnectionsMode) {
+  if (state.connectionsMode === mode) return
+  patch({ connectionsMode: mode })
+}
+
+/** 跳到「活动」Tab 的指定分段；连接分段可顺带指定活动 / 最近 */
+export function openActivity(segment: ActivitySegment, mode?: ConnectionsMode) {
+  patch(mode ? { activitySegment: segment, connectionsMode: mode } : { activitySegment: segment })
+  tabJump?.("activity")
 }
 
 // ---------- 实时速率 ----------
@@ -595,8 +611,9 @@ async function tick() {
   }
 
   tickCount++
-  // 请求 Tab 可见时由该页自己轮询，这里不再重复拉最近请求
-  if (tickCount % 3 === 1 && state.visibleTab !== 3) {
+  // 活动 → 连接可见时由该页自己轮询，这里不再重复拉最近请求
+  const connectionsVisible = state.visibleTab === "activity" && state.activitySegment === "connections"
+  if (tickCount % 3 === 1 && !connectionsVisible) {
     try {
       const { requests } = await getRecentRequests(config)
       if (!connectionIsCurrent(generation, activeId)) return

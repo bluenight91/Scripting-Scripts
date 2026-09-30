@@ -1,6 +1,7 @@
 // Surge Panel 主界面（index.tsx 全屏运行与 home_screen_default_ui.tsx 首页 Tab 共用）
 import {
   Button,
+  HStack,
   Image,
   Navigation,
   NavigationStack,
@@ -15,18 +16,38 @@ import {
   useObservable,
   VStack,
 } from "scripting"
-import { startPolling, stopPolling, registerTabJump, setVisibleTab } from "./lib/store"
+import { startPolling, stopPolling, registerTabJump, setVisibleTab, TAB_ORDER, type TabId } from "./lib/store"
+import { TONES } from "./lib/ui"
 import { useMarkdownReleaseNotesSheet } from "./components/ReleaseNotesSheet"
-import { OverviewView } from "./views/OverviewView"
-import { PoliciesView } from "./views/PoliciesView"
-import { TrafficView } from "./views/TrafficView"
-import { NetworkView } from "./views/NetworkView"
+import { ConnectionPill } from "./components/ConnectionStatus"
+import { DashboardView } from "./views/DashboardView"
+import { RoutingView } from "./views/RoutingView"
+import { ActivityView } from "./views/ActivityView"
 import { SettingsView } from "./views/SettingsView"
 
-const TAB_TITLES = ["总览", "策略", "流量", "请求", "设置"]
+const TABS: Record<TabId, { title: string; icon: string }> = {
+  dashboard: { title: "仪表盘", icon: "gauge.with.dots.needle.67percent" },
+  routing: { title: "分流", icon: "arrow.triangle.branch" },
+  activity: { title: "活动", icon: "waveform.path.ecg" },
+  settings: { title: "设置", icon: "gearshape" },
+}
+
+function tabContent(tab: TabId) {
+  switch (tab) {
+    case "dashboard":
+      return <DashboardView />
+    case "routing":
+      return <RoutingView />
+    case "activity":
+      return <ActivityView />
+    case "settings":
+      return <SettingsView />
+  }
+}
 
 export function SurgePanelApp() {
   const dismiss = Navigation.useDismiss()
+  // TabView 以序号驱动；业务侧只用 TabId，经 TAB_ORDER 换算
   const selection = useObservable<number>(0)
   // 首页 Tab 环境（Scripting App 首页承载）：改用顶部分段选择器，避免与 App 底栏叠出双层标签栏
   const isHome = Script.env === "home_screen"
@@ -41,16 +62,15 @@ export function SurgePanelApp() {
     return () => stopPolling()
   }, [])
 
-  useEffect(() => registerTabJump((i) => selection.setValue(i)), [])
+  useEffect(() => registerTabJump((tab) => selection.setValue(TAB_ORDER.indexOf(tab))), [])
 
   useEffect(() => {
-    setVisibleTab(selection.value)
+    setVisibleTab(TAB_ORDER[selection.value] ?? "dashboard")
   }, [selection.value])
 
-  // ---------- 首页 Tab：顶部分段器 + 左右滑动翻页 ----------
-  // Scripting 底栏是浮层：保留可见，同时忽略 container 底部安全区，让内容铺到屏幕底（对齐 CAIS）
+  // ---------- 首页 Tab：顶部分段器 + 状态胶囊 + 左右滑动翻页 ----------
+  // Scripting 底栏是浮层：保留可见，同时忽略 container 底部安全区，让内容铺到屏幕底
   if (isHome) {
-    const current = selection.value
     return (
       <NavigationStack
         tabBarVisibility="visible"
@@ -64,17 +84,20 @@ export function SurgePanelApp() {
           scrollEdgeEffectHidden="bottom"
           sheet={releaseNotes}
         >
-          <Picker
-            label={<Text>页面切换</Text>}
-            pickerStyle="segmented"
-            value={String(current)}
-            onChanged={(v: string) => selection.setValue(Number(v))}
-            padding={{ horizontal: 16, top: 8, bottom: 4 }}
-          >
-            {TAB_TITLES.map((t, i) => (
-              <Text key={t} tag={String(i)}>{t}</Text>
-            ))}
-          </Picker>
+          <HStack spacing={10} padding={{ horizontal: 16, top: 8, bottom: 6 }}>
+            <Picker
+              label={<Text>页面切换</Text>}
+              pickerStyle="segmented"
+              value={String(selection.value)}
+              onChanged={(v: string) => selection.setValue(Number(v))}
+              frame={{ maxWidth: "infinity" }}
+            >
+              {TAB_ORDER.map((id, i) => (
+                <Text key={id} tag={String(i)}>{TABS[id].title}</Text>
+              ))}
+            </Picker>
+            <ConnectionPill compact />
+          </HStack>
           <TabView
             selection={selection}
             tabViewStyle="page"
@@ -82,21 +105,11 @@ export function SurgePanelApp() {
             ignoresSafeArea={{ regions: "container", edges: "bottom" }}
             scrollEdgeEffectHidden="bottom"
           >
-            <Tab title="总览" value={0}>
-              <OverviewView />
-            </Tab>
-            <Tab title="策略" value={1}>
-              <PoliciesView />
-            </Tab>
-            <Tab title="流量" value={2}>
-              <TrafficView />
-            </Tab>
-            <Tab title="请求" value={3}>
-              <NetworkView />
-            </Tab>
-            <Tab title="设置" value={4}>
-              <SettingsView />
-            </Tab>
+            {TAB_ORDER.map((id, i) => (
+              <Tab key={id} title={TABS[id].title} value={i}>
+                {tabContent(id)}
+              </Tab>
+            ))}
           </TabView>
         </VStack>
       </NavigationStack>
@@ -106,7 +119,6 @@ export function SurgePanelApp() {
   // ---------- 全屏运行：原生底部 TabView ----------
   const toolbar = (
     <Toolbar>
-      {/* 关闭 */}
       <ToolbarItem placement="topBarLeading" sharedBackgroundVisibility="visible">
         <Button
           action={() => dismiss()}
@@ -119,7 +131,6 @@ export function SurgePanelApp() {
         </Button>
       </ToolbarItem>
 
-      {/* 最小化（支持时） */}
       {Script.supportsMinimization() ? (
         <ToolbarItem placement="topBarTrailing" sharedBackgroundVisibility="visible">
           <Button
@@ -146,28 +157,18 @@ export function SurgePanelApp() {
     <NavigationStack>
       <TabView
         selection={selection}
-        tint="systemBlue"
+        tint={TONES.accent.fg}
         toolbar={toolbar}
         tabBarMinimizeBehavior="onScrollDown"
         scrollEdgeEffectHidden="bottom"
         ignoresSafeArea={{ regions: "container", edges: "bottom" }}
         sheet={releaseNotes}
       >
-        <Tab title="总览" systemImage="speedometer" value={0}>
-          <OverviewView />
-        </Tab>
-        <Tab title="策略" systemImage="point.3.connected.trianglepath.dotted" value={1}>
-          <PoliciesView />
-        </Tab>
-        <Tab title="流量" systemImage="arrow.up.arrow.down" value={2}>
-          <TrafficView />
-        </Tab>
-        <Tab title="请求" systemImage="list.bullet.rectangle" value={3}>
-          <NetworkView />
-        </Tab>
-        <Tab title="设置" systemImage="gearshape" value={4}>
-          <SettingsView />
-        </Tab>
+        {TAB_ORDER.map((id, i) => (
+          <Tab key={id} title={TABS[id].title} systemImage={TABS[id].icon} value={i}>
+            {tabContent(id)}
+          </Tab>
+        ))}
       </TabView>
     </NavigationStack>
   )
