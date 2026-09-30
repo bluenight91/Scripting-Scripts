@@ -1,4 +1,4 @@
-// 策略 Tab：策略组列表 + 节点钻取
+// 分流 → 策略组：策略组列表 + 节点钻取
 import {
   Button,
   HStack,
@@ -10,7 +10,6 @@ import {
   Section,
   Spacer,
   Text,
-  TextField,
   useEffect,
   useState,
   VStack,
@@ -30,10 +29,12 @@ import {
   type PolicyBenchmarkResult,
   type PolicyOption,
 } from "../lib/surgeApi"
-import { formatDelay, latencyForeground, pickBenchmark, resolvePolicyLatency, testResultScore, type LatencyStatus } from "../lib/metrics"
+import { formatDelay, pickBenchmark, resolvePolicyLatency, testResultScore, type LatencyStatus } from "../lib/metrics"
 import { useStoreSelector } from "../lib/store"
 import { useTabAutoRefresh } from "../lib/liveCache"
-import { connectErrorText } from "../lib/ui"
+import { connectErrorText, IS_GLASS, TONES } from "../lib/ui"
+import { BARE_ROW, Card, EmptyState, IconBadge, LIST_STYLE, SearchField, Tag, latencyTone } from "../components/Kit"
+import { RoutingChips } from "../components/SegmentChips"
 
 function DelayLabel({
   status,
@@ -45,24 +46,27 @@ function DelayLabel({
   showNone?: boolean
 }) {
   if (status === "testing") return <ProgressView />
-  if (status === "fail") {
-    return (
-      <Text font={13} foregroundStyle="systemRed">
-        失败
-      </Text>
-    )
-  }
+  if (status === "fail") return <DelayPill text="失败" fg={TONES.red.fg} bg={TONES.red.soft} />
   if (status === "ms" && ms != null) {
-    return (
-      <Text font={13} foregroundStyle={latencyForeground(ms)}>
-        {formatDelay(ms)}
-      </Text>
-    )
+    const t = TONES[latencyTone(ms)]
+    return <DelayPill text={formatDelay(ms)} fg={t.fg} bg={t.soft} />
   }
   if (!showNone) return null
+  return <DelayPill text="未测速" fg="tertiaryLabel" bg={TONES.gray.soft} />
+}
+
+function DelayPill({ text, fg, bg }: { text: string; fg: any; bg: any }) {
   return (
-    <Text font={13} foregroundStyle="tertiaryLabel">
-      未测速
+    <Text
+      font={12}
+      fontWeight="semibold"
+      fontDesign="rounded"
+      monospacedDigit
+      foregroundStyle={fg}
+      padding={{ horizontal: 8, vertical: 3 }}
+      background={{ style: bg, shape: "capsule" }}
+    >
+      {text}
     </Text>
   )
 }
@@ -119,7 +123,7 @@ export function PoliciesView() {
     }
   }
 
-  useTabAutoRefresh(1, () => load())
+  useTabAutoRefresh("routing", () => load())
 
   const names = groups ? (groupOrder.length ? groupOrder : Object.keys(groups)) : []
   const q = query.trim().toLowerCase()
@@ -127,28 +131,37 @@ export function PoliciesView() {
 
   return (
     <List
-      navigationTitle={Script.env === "home_screen" ? undefined : "策略"}
+      navigationTitle={Script.env === "home_screen" ? undefined : "分流"}
       refreshable={async () => { await load(true) }}
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+      {...LIST_STYLE}
     >
       <Section>
-        <TextField title="搜索" value={query} onChanged={setQuery} prompt="策略组名称" />
+        <VStack {...BARE_ROW}>
+          <RoutingChips />
+        </VStack>
+      </Section>
+      <Section>
+        <SearchField value={query} onChanged={setQuery} prompt="策略组名称" />
       </Section>
       {error ? (
         <Section>
-          <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
-          <Button title="重试" action={() => load(true)} />
+          <Text font={14} foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
+          <Button title="重试" systemImage="arrow.clockwise" action={() => load(true)} />
         </Section>
       ) : null}
       {loading && !groups ? (
         <Section>
-          <Text foregroundStyle="secondaryLabel">加载中…</Text>
+          <EmptyState icon="hourglass" title="加载中…" />
         </Section>
       ) : null}
       {groups ? (
-        <Section footer={<Text font={13}>{q ? `${filtered.length} / ${names.length} 个策略组` : `${names.length} 个策略组`}</Text>}>
+        <Section
+          header={<Text>{q ? `${filtered.length} / ${names.length} 个策略组` : `${names.length} 个策略组`}</Text>}
+          footer={<Text font={12}>延迟来自 Surge 基准测试缓存；点按策略组切换节点</Text>}
+        >
           {filtered.length === 0 ? (
-            <Text foregroundStyle="secondaryLabel">{q ? "无匹配策略组" : "暂无策略组"}</Text>
+            <EmptyState icon="square.stack.3d.up.slash" title={q ? "无匹配策略组" : "暂无策略组"} />
           ) : (
             filtered.map((name) => {
             const options = groups[name]
@@ -176,14 +189,19 @@ export function PoliciesView() {
                   />
                 }
               >
-                <HStack>
+                <HStack spacing={12}>
+                  <IconBadge icon="square.stack.3d.up.fill" tone="accent" size={34} />
                   <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-                    <Text font={17} lineLimit={1} minScaleFactor={0.8}>{name}</Text>
-                    <Text font={13} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.8}>
-                      {selected ?? `${options.length} 个选项`}
-                    </Text>
+                    <Text font={16} fontWeight="semibold" lineLimit={1} minScaleFactor={0.8}>{name}</Text>
+                    <HStack spacing={4}>
+                      {selected ? (
+                        <Image systemName="arrow.turn.down.right" font={10} foregroundStyle="tertiaryLabel" />
+                      ) : null}
+                      <Text font={13} foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.8}>
+                        {selected ?? `${options.length} 个选项`}
+                      </Text>
+                    </HStack>
                   </VStack>
-                  <Spacer />
                   <DelayLabel status={lat.status} ms={lat.ms} />
                 </HStack>
               </NavigationLink>
@@ -212,9 +230,9 @@ function NestedGroupLoader({ name }: { name: string }) {
 
   if (!options) {
     return (
-      <List navigationTitle={name}>
+      <List navigationTitle={name} {...LIST_STYLE}>
         <Section>
-          <Text foregroundStyle="secondaryLabel">加载中…</Text>
+          <EmptyState icon="hourglass" title="加载中…" />
         </Section>
       </List>
     )
@@ -404,32 +422,57 @@ export function GroupDetailView({
     setTesting(false)
   }
 
+  const selectedOpt = selection ? options.find((o) => o.name === selection) : undefined
+
   return (
-    <List navigationTitle={groupName}>
-      {error ? (
-        <Section>
-          <Text foregroundStyle="systemRed">{error}</Text>
-        </Section>
-      ) : null}
+    <List navigationTitle={groupName} navigationBarTitleDisplayMode="inline" {...LIST_STYLE}>
       <Section
         footer={
-          <Text font={13}>
-            {testing
-              ? testProgress || "测速中…"
-              : autoGroup === false
+          <Text font={12}>
+            {autoGroup === false
               ? "点按节点即可切换。延迟来自 Surge 基准测试缓存（含内嵌/链式节点，由 Surge 后台定期自动更新）；手动选择组不支持面板内组测速"
               : "点按节点即可切换。延迟来自 Surge 基准测试缓存与组测速结果；「全部测速」会刷新本组。绿色「最优」为自动组当选节点"}
           </Text>
         }
       >
-        <Button
-          title={testing ? "测速中…" : "全部测速"}
-          systemImage="speedometer"
-          disabled={testing}
-          action={testAll}
-        />
+        <VStack {...BARE_ROW}>
+          <Card>
+            <HStack spacing={8}>
+              <Text font={12} fontWeight="semibold" foregroundStyle="secondaryLabel">当前节点</Text>
+              <Spacer />
+              {autoGroup === null ? null : (
+                <Tag text={autoGroup ? "自动组" : "手动选择"} tone={autoGroup ? "green" : "accent"} />
+              )}
+              <Tag text={`${options.length} 个选项`} />
+            </HStack>
+            <Text font={24} fontWeight="bold" fontDesign="rounded" lineLimit={1} minScaleFactor={0.6}>
+              {selection ?? "—"}
+            </Text>
+            {selectedOpt ? (
+              <Text font={13} foregroundStyle="secondaryLabel" lineLimit={1}>{selectedOpt.typeDescription}</Text>
+            ) : null}
+            <HStack spacing={10}>
+              <Button
+                title={testing ? "测速中…" : "全部测速"}
+                systemImage="speedometer"
+                buttonStyle={IS_GLASS ? "glassProminent" : "borderedProminent"}
+                tint={TONES.accent.fg}
+                disabled={testing}
+                action={testAll}
+              />
+              {testing ? (
+                <Text font={12} foregroundStyle="secondaryLabel" lineLimit={1}>{testProgress || "测速中…"}</Text>
+              ) : null}
+            </HStack>
+          </Card>
+        </VStack>
       </Section>
-      <Section>
+      {error ? (
+        <Section>
+          <Text font={14} foregroundStyle="systemRed">{error}</Text>
+        </Section>
+      ) : null}
+      <Section header={<Text>节点</Text>}>
         {options.map((o) => {
           const isSelected = o.name === selection
           const delay = delays[o.name]
@@ -444,31 +487,33 @@ export function GroupDetailView({
           return (
             <HStack
               key={o.lineHash}
-              spacing={10}
+              spacing={12}
+              contentShape="rect"
               onTapGesture={() => select(o.name)}
             >
-              <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-                <Text font={17} lineLimit={1} minScaleFactor={0.7}>{o.name}</Text>
-                <Text font={13} foregroundStyle="secondaryLabel">{o.typeDescription}</Text>
+              {selecting === o.name ? (
+                <ProgressView frame={{ width: 22 }} />
+              ) : (
+                <Image
+                  systemName={isSelected ? "checkmark.circle.fill" : "circle"}
+                  foregroundStyle={isSelected ? TONES.accent.fg : "tertiaryLabel"}
+                  font={20}
+                  frame={{ width: 22 }}
+                />
+              )}
+              <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+                <HStack spacing={6}>
+                  <Text font={16} fontWeight={isSelected ? "semibold" : "regular"} lineLimit={1} minScaleFactor={0.7}>{o.name}</Text>
+                  {isElected ? <Tag text="最优" tone="green" /> : null}
+                </HStack>
+                <Text font={12} foregroundStyle="secondaryLabel">{o.typeDescription}</Text>
                 {details[o.name] ? (
-                  <Text font={12} foregroundStyle="tertiaryLabel" lineLimit={1} minScaleFactor={0.7}>
+                  <Text font={11} fontDesign="monospaced" foregroundStyle="tertiaryLabel" lineLimit={1} minScaleFactor={0.7}>
                     {details[o.name]}
                   </Text>
                 ) : null}
               </VStack>
-              {selecting === o.name ? (
-                <ProgressView />
-              ) : (
-                <VStack alignment="trailing" spacing={2}>
-                  {isElected ? (
-                    <Text font={12} foregroundStyle="systemGreen">最优</Text>
-                  ) : null}
-                  <DelayLabel status={lat.status} ms={lat.ms} showNone={!o.isGroup} />
-                </VStack>
-              )}
-              {isSelected ? (
-                <Image systemName="checkmark.circle.fill" foregroundStyle="systemBlue" font={18} />
-              ) : null}
+              <DelayLabel status={lat.status} ms={lat.ms} showNone={!o.isGroup} />
               {o.isGroup ? (
                 <NavigationLink title="子组" destination={<NestedGroupLoader name={o.name} />} />
               ) : null}
