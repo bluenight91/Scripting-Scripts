@@ -14,7 +14,7 @@ import {
   useState,
   VStack,
 } from "scripting"
-import { Card, IconBadge, SectionHeader, Tag, ValueText } from "../components/Kit"
+import { Card, IconBadge, PAGE_BG, SectionHeader, Tag, ValueText } from "../components/Kit"
 import { openActivity, savePrefs, useStore } from "../lib/store"
 import { reloadProfile } from "../lib/surgeApi"
 import {
@@ -27,7 +27,7 @@ import {
   MEM_RANGE_OPTIONS,
   type MemRangeMin,
 } from "../lib/metrics"
-import { IS_GLASS, METRICS_HINT, PAGE_BACKDROP, UI, type Tone } from "../lib/ui"
+import { IS_GLASS, METRICS_HINT, UI, type Tone } from "../lib/ui"
 
 export function MemoryDiagView() {
   const state = useStore()
@@ -85,7 +85,7 @@ export function MemoryDiagView() {
         axes="vertical"
         navigationTitle="内存诊断"
         navigationBarTitleDisplayMode="inline"
-        background={PAGE_BACKDROP}
+        background={PAGE_BG}
         toolbar={{ confirmationAction: <Button title="完成" action={dismiss} /> }}
         confirmationDialog={{
           isPresented: confirmReload,
