@@ -508,3 +508,13 @@ export function analyzeMemoryTrend(
     ...stats,
   }
 }
+
+/** 图表降采样到最多 n 个点（保留末点） */
+export function downsample<T>(pts: T[], n: number): T[] {
+  if (pts.length <= n) return pts
+  const step = pts.length / n
+  const out: T[] = []
+  for (let i = 0; i < n; i++) out.push(pts[Math.floor(i * step)])
+  out.push(pts[pts.length - 1])
+  return out
+}

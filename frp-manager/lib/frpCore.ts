@@ -176,6 +176,13 @@ export function formatBytes(n: number | null | undefined): string {
   return `${neg ? "-" : ""}${text} ${unit}`
 }
 
+/** formatBytes 拆成数值与单位，供大号数字 + 小号单位排版；空值为 { value: "—" } */
+export function splitBytes(n: number | null | undefined): { value: string; unit?: string } {
+  const s = formatBytes(n)
+  const i = s.lastIndexOf(" ")
+  return i < 0 ? { value: s } : { value: s.slice(0, i), unit: s.slice(i + 1) }
+}
+
 /** 把 frp 的 conf/附加信息对象压成可读多行 JSON；非对象原样返回 */
 export function describeConf(conf: unknown): string {
   if (conf === null || conf === undefined) return ""

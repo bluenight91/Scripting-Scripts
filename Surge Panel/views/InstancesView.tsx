@@ -1,6 +1,7 @@
 // 设置 → 实例：添加 / 编辑 / 测试连通 / 删除
 import {
   Button,
+  HStack,
   List,
   Picker,
   Section,
@@ -8,8 +9,10 @@ import {
   Text,
   TextField,
   useState,
+  VStack,
 } from "scripting"
 import { InstanceList } from "../components/InstanceList"
+import { BARE_ROW, IconBadge, LIST_STYLE, ListRow, Tag } from "../components/Kit"
 import { endpointScope, validateEndpoint } from "../lib/connection"
 import {
   defaultInstance,
@@ -29,7 +32,7 @@ import {
   surgeApiErrorMessage,
   type SurgeApiErrorKind,
 } from "../lib/surgeApi"
-import { connectionErrorHint } from "../lib/ui"
+import { cardBackground, connectionErrorHint, IS_GLASS, roundedShape, TONES, UI, type Tone } from "../lib/ui"
 
 const HTTP_API_DOC = "https://manual.nssurge.com/tools/http-api.html"
 
@@ -250,8 +253,14 @@ export function InstanceEditor({
     `[General]\nhttp-api = YOUR_KEY@${localEndpoint ? "127.0.0.1" : "0.0.0.0"}:${setupPort}` +
     `\nhttp-api-tls = ${protocol === "https" ? "true" : "false"}`
 
+  const scope = endpointScope(host)
+  const scopeLabel = scope === "local" ? "本机" : scope === "lan" ? "局域网" : host.trim() ? "外部地址" : "未填写"
+  const probeOk = Boolean(probeMeta.lastSeenAt) && !msgKind
+  const presetLocal = host.trim() === "127.0.0.1"
+
   return (
     <List
+      {...LIST_STYLE}
       navigationTitle={isNew ? "添加实例" : "编辑实例"}
       confirmationDialog={{
         isPresented: pendingAction !== null,
@@ -280,34 +289,44 @@ export function InstanceEditor({
         ),
       }}
     >
-      <Section
-        header={<Text>快速设置</Text>}
-        footer={<Text font={13}>预设只填写面板连接地址；Surge 侧监听配置见下方说明。</Text>}
-      >
-        <Button
-          title="本机 Surge"
-          systemImage="iphone"
-          action={() => {
-            clearProbe()
-            setName(!name.trim() || name === "本机" || name === "网关" ? "本机" : name)
-            setProtocol("http")
-            setHost("127.0.0.1")
-            setPort("6166")
-          }}
-        />
-        <Button
-          title="局域网 Surge 网关"
-          systemImage="network"
-          action={() => {
-            clearProbe()
-            setName(!name.trim() || name === "本机" || name === "网关" ? "网关" : name)
-            setProtocol("http")
-            setHost("")
-            setPort("6166")
-          }}
-        />
-      </Section>
       <Section>
+        <VStack {...BARE_ROW} alignment="leading" spacing={12}>
+          <HStack spacing={10}>
+            <PresetTile
+              icon="iphone"
+              title="本机 Surge"
+              subtitle="127.0.0.1:6166"
+              tone="accent"
+              selected={presetLocal}
+              onTap={() => {
+                clearProbe()
+                setName(!name.trim() || name === "本机" || name === "网关" ? "本机" : name)
+                setProtocol("http")
+                setHost("127.0.0.1")
+                setPort("6166")
+              }}
+            />
+            <PresetTile
+              icon="wifi.router"
+              title="局域网网关"
+              subtitle="填写网关 IP"
+              tone="teal"
+              selected={!presetLocal && scope === "lan"}
+              onTap={() => {
+                clearProbe()
+                setName(!name.trim() || name === "本机" || name === "网关" ? "网关" : name)
+                setProtocol("http")
+                setHost("")
+                setPort("6166")
+              }}
+            />
+          </HStack>
+          <Text font={12} foregroundStyle="secondaryLabel">
+            预设只填写面板连接地址；Surge 侧监听配置见下方说明。
+          </Text>
+        </VStack>
+      </Section>
+      <Section header={<Text>连接</Text>}>
         <TextField label={<Text>名称</Text>} value={name} onChanged={setName} prompt="本机 / 网关" />
         <Picker
           title="协议"
@@ -349,47 +368,112 @@ export function InstanceEditor({
           prompt="X-Key"
         />
       </Section>
-      <Section
-        footer={
-          <Text font={13} foregroundStyle={msgKind ? "systemRed" : "secondaryLabel"}>
-            {msg ?? securityNote(protocol, host)}
-          </Text>
-        }
-      >
-        <Button title={busy ? "测试中…" : "测试连通"} systemImage="antenna.radiowaves.left.and.right" disabled={busy} action={() => { void test() }} />
-        <Button title="保存" systemImage="checkmark.circle" action={() => { void save() }} />
+      <Section>
+        <VStack {...BARE_ROW} alignment="leading" spacing={12}>
+          <HStack spacing={10}>
+            <IconBadge
+              icon={msgKind ? "xmark.octagon.fill" : probeOk ? "checkmark.seal.fill" : scope === "public" ? "exclamationmark.shield.fill" : "shield.lefthalf.filled"}
+              tone={msgKind ? "red" : probeOk ? "green" : scope === "public" ? "orange" : "blue"}
+              size={34}
+            />
+            <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+              <HStack spacing={6}>
+                <Text font={15} fontWeight="semibold">{msgKind ? "连接失败" : probeOk ? "连通正常" : "连接检查"}</Text>
+                <Tag text={scopeLabel} tone={scope === "public" ? "orange" : "gray"} />
+                <Tag text={protocol.toUpperCase()} tone="gray" mono />
+              </HStack>
+              <Text font={12} foregroundStyle={msgKind ? TONES.red.fg : "secondaryLabel"}>
+                {msg ?? securityNote(protocol, host)}
+              </Text>
+            </VStack>
+          </HStack>
+          <HStack spacing={10}>
+            <Button
+              title={busy ? "测试中…" : "测试连通"}
+              systemImage="antenna.radiowaves.left.and.right"
+              buttonStyle="bordered"
+              disabled={busy}
+              frame={{ maxWidth: "infinity" }}
+              action={() => { void test() }}
+            />
+            <Button
+              title="保存"
+              systemImage="checkmark"
+              buttonStyle={IS_GLASS ? "glassProminent" : "borderedProminent"}
+              frame={{ maxWidth: "infinity" }}
+              action={() => { void save() }}
+            />
+          </HStack>
+        </VStack>
       </Section>
       <Section
         header={<Text>Surge 侧配置</Text>}
         footer={
-          <Text font={13}>
-            {localEndpoint
-              ? setupSnippet
-              : `${setupSnippet}\n\n面板主机应填写 Surge 设备的实际局域网 IP，而不是 0.0.0.0。`}
-          </Text>
+          localEndpoint ? undefined : (
+            <Text font={13}>面板主机应填写 Surge 设备的实际局域网 IP，而不是 0.0.0.0。</Text>
+          )
         }
       >
+        <Text font={12} fontDesign="monospaced" padding={{ vertical: 4 }}>
+          {setupSnippet}
+        </Text>
         {protocol === "https" ? (
           <Text font={13} foregroundStyle="secondaryLabel">
             HTTPS 需先配置 MITM CA，将 CA 安装到本机并在系统设置中设为信任，再把 http-api-tls 改为 true。
           </Text>
         ) : null}
-        <Button
-          title="查看 Surge HTTP API 官方说明"
-          systemImage="safari"
-          action={() => { void Safari.present(HTTP_API_DOC, false) }}
-        />
+        <Button action={() => { void Safari.present(HTTP_API_DOC, false) }}>
+          <ListRow icon="safari" tone="blue" title="Surge HTTP API 官方说明" titleColor="label" />
+        </Button>
       </Section>
       {!isNew ? (
         <Section>
-          <Button title="删除实例" role="destructive" systemImage="trash" action={() => setPendingAction("delete")} />
+          <Button action={() => setPendingAction("delete")}>
+            <ListRow icon="trash.fill" tone="red" title="删除实例" titleColor="systemRed" />
+          </Button>
         </Section>
       ) : null}
       {onDone ? (
         <Section>
-          <Button title="返回列表" action={onDone} />
+          <Button action={onDone}>
+            <ListRow icon="chevron.left" tone="gray" title="返回列表" titleColor="label" />
+          </Button>
         </Section>
       ) : null}
     </List>
+  )
+}
+
+function PresetTile({
+  icon,
+  title,
+  subtitle,
+  tone,
+  selected,
+  onTap,
+}: {
+  icon: string
+  title: string
+  subtitle: string
+  tone: Tone
+  selected: boolean
+  onTap: () => void
+}) {
+  return (
+    <VStack
+      alignment="leading"
+      spacing={8}
+      padding={14}
+      frame={{ maxWidth: "infinity", alignment: "leading" }}
+      background={cardBackground(UI.tileRadius, selected ? TONES[tone].soft : UI.cardBg)}
+      contentShape={roundedShape(UI.tileRadius)}
+      onTapGesture={onTap}
+    >
+      <IconBadge icon={icon} tone={tone} size={30} filled={selected} />
+      <VStack alignment="leading" spacing={1}>
+        <Text font={15} fontWeight="semibold">{title}</Text>
+        <Text font={11} fontDesign="monospaced" foregroundStyle="secondaryLabel">{subtitle}</Text>
+      </VStack>
+    </VStack>
   )
 }

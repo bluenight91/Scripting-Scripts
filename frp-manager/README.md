@@ -1,24 +1,24 @@
 # frp 管理器 for Scripting
 
-一个运行在 iOS [Scripting](https://github.com/ScriptingApp) App 上的 frp（内网穿透）管理器。通过 frp Admin API（HTTP Basic Auth）同时管理多个 frpc（客户端）与 frps（服务端）实例。
+一个运行在 iOS [Scripting](https://github.com/ScriptingApp) App 上的 frp（内网穿透）管理器。通过 frp Admin API（HTTP Basic Auth）同时管理多个 frpc（客户端）与 frps（服务端）实例。2.0 起采用与 Surge Panel 一致的卡片式设计。
 
 ## 功能
 
-- **多服务器条目**：添加 / 编辑 / 删除多个条目，每条包含名称、类型（frpc/frps）、地址、用户名；密码按条目存系统 Keychain。主页显示所有条目并用 `/healthz` 探测在线状态，下拉刷新。
+- **多服务器条目**：添加 / 编辑 / 删除多个条目，每条包含名称、类型（frpc/frps）、地址、用户名；密码按条目存系统 Keychain。主页顶部概览卡片汇总在线数量，服务器以卡片展示并用 `/healthz` 探测在线状态，下拉刷新；添加 / 编辑在弹出表单中完成，长按或左滑可编辑 / 删除。
 - **frpc 详情**：
-  - 代理状态列表（`/api/status`）：按类型分组，显示 name / type / 状态徽标 / local→remote 地址 / 错误信息
+  - 代理状态列表（`/api/status`）：代理 / 运行中 / 异常指标，按类型芯片筛选，显示 name / type / 状态胶囊 / local→remote 地址 / 错误信息
   - 查看完整配置（`/api/config`，等宽文本），编辑后保存 = `PUT /api/config` + `GET /api/reload` 两步串联；写入成功但 reload 失败时会明确提示"配置已写入但 reload 失败"
   - 停止 frpc（`/api/stop`，二次确认）
-  - Store 动态代理管理（`/api/store/proxies`）：列出 / 按类型表单创建（tcp/udp/http/https/stcp/xtcp）/ 删除；store 未启用时显示配置提示而不是报错
+  - Store 动态代理管理（`/api/store/proxies`）：列出 / 弹出表单按类型创建（tcp/udp/http/https/stcp/xtcp）/ 删除；store 未启用时显示配置提示而不是报错
 - **frps 详情**：
-  - 服务端信息卡片（`/api/serverinfo`）：版本、bindPort、当前连接、总流量、客户端数、各类型代理数
+  - 服务端主卡片（`/api/serverinfo`）：版本、bindPort、总流入 / 流出、客户端数、当前连接、代理总数；类型芯片显示各类型代理数
   - 按类型查看代理统计（`/api/proxy/{type}`），每行显示状态 / 今日流量 / 连接数；点按进入详情查看 conf、起停时间与累计流量（`/api/traffic/{name}`，自动 fallback 旧路径 `/api/proxy/traffic/{name}`）
   - 客户端列表（`/api/clients`，在线 / 离线 / 全部过滤）
   - 清理离线代理统计记录（`DELETE /api/proxies?status=offline`，二次确认）
 
 ## 使用
 
-1. **导入脚本**：在 Scripting 中用「GitHub 文件夹链接导入」，粘贴本目录（`frp-manager/`）的 GitHub 树链接即可；或把整个 `frp-manager` 目录放入 Scripting 的脚本目录。
+1. **导入脚本**：下载仓库根目录的 [`frp-manager.scripting`](../frp-manager.scripting) 用 Scripting 打开；或在 Scripting 中用「GitHub 文件夹链接导入」粘贴本目录（`frp-manager/`）的 GitHub 树链接；或把整个 `frp-manager` 目录放入 Scripting 的脚本目录。
 2. **开启 frp Admin API**：
    - frpc：配置文件中加入 `webServer.addr` / `webServer.port`（如 `127.0.0.1:6080`），可选 `webServer.user` / `webServer.password`；动态代理还需要 `store.path`。
    - frps：加入 `webServer.addr` / `webServer.port`（dashboard 端口，如 `7500`），可选 `webServer.user` / `webServer.password`。

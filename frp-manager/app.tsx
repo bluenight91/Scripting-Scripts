@@ -1,7 +1,8 @@
-// frp 管理器主界面：服务器条目列表 + 在线状态探测
+// frp 管理器主界面：概览主卡片 + 服务器卡片 + 在线状态探测；添加 / 编辑在 sheet 中完成
 import {
   Button,
   Dialog,
+  Group,
   HStack,
   Image,
   List,
@@ -9,6 +10,7 @@ import {
   NavigationLink,
   NavigationStack,
   Section,
+  Spacer,
   Text,
   Toolbar,
   ToolbarItem,
@@ -28,12 +30,20 @@ import { ServerEditView } from "./views/ServerEditView"
 import { FrpcView } from "./views/FrpcView"
 import { FrpsView } from "./views/FrpsView"
 import { useMarkdownReleaseNotesSheet } from "./components/ReleaseNotesSheet"
+import { BARE_ROW, EmptyState, HeroCard, IconBadge, LIST_STYLE, StatusPill, Tag, ValueText } from "./components/Kit"
+import { UI, type Tone } from "./lib/theme"
 
 export type ServerStatus = "checking" | "online" | "offline"
 
 export function serverIcon(kind: FrpServer["kind"]): string {
   return kind === "frpc" ? "arrow.triangle.branch" : "server.rack"
 }
+
+export function serverTone(kind: FrpServer["kind"]): Tone {
+  return kind === "frpc" ? "blue" : "accent"
+}
+
+type Editor = { mode: "add" } | { mode: "edit"; server: FrpServer }
 
 export function FrpManagerApp() {
   const dismiss = Navigation.useDismiss()
@@ -44,8 +54,7 @@ export function FrpManagerApp() {
   })
   const [servers, setServers] = useState<FrpServer[]>(loadServers)
   const [statuses, setStatuses] = useState<Record<string, ServerStatus>>({})
-  const [editing, setEditing] = useState<FrpServer | null>(null)
-  const [adding, setAdding] = useState(false)
+  const [editor, setEditor] = useState<Editor | null>(null)
 
   async function probeAll(list: FrpServer[]) {
     const next: Record<string, ServerStatus> = {}
@@ -91,19 +100,10 @@ export function FrpManagerApp() {
     void probeAll(list)
   }
 
-  if (adding) {
-    return (
-      <ServerEditView initial={null} onDone={(s, pwd) => { if (s) upsertServer(s, pwd); setAdding(false) }} />
-    )
-  }
-  if (editing) {
-    return (
-      <ServerEditView
-        initial={editing}
-        onDone={(s, pwd) => { if (s) upsertServer(s, pwd); setEditing(null) }}
-      />
-    )
-  }
+  const onlineCount = servers.filter((s) => statuses[s.id] === "online").length
+  const checking = servers.some((s) => (statuses[s.id] ?? "checking") === "checking")
+  const frpcCount = servers.filter((s) => s.kind === "frpc").length
+  const frpsCount = servers.length - frpcCount
 
   const toolbar = (
     <Toolbar>
@@ -120,7 +120,7 @@ export function FrpManagerApp() {
       </ToolbarItem>
       <ToolbarItem placement="topBarTrailing" sharedBackgroundVisibility="visible">
         <Button
-          action={() => setAdding(true)}
+          action={() => setEditor({ mode: "add" })}
           buttonStyle="plain"
           frame={{ width: 44, height: 44 }}
           contentShape="rect"
@@ -133,25 +133,74 @@ export function FrpManagerApp() {
   )
 
   return (
-    <NavigationStack>
+    <NavigationStack
+      sheet={{
+        isPresented: editor !== null,
+        onChanged: (v: boolean) => {
+          if (!v) setEditor(null)
+        },
+        content: (
+          <ServerEditView
+            key={editor?.mode === "edit" ? editor.server.id : "new"}
+            initial={editor?.mode === "edit" ? editor.server : null}
+            onDone={(s, pwd) => {
+              if (s) upsertServer(s, pwd)
+              setEditor(null)
+            }}
+          />
+        ),
+      }}
+    >
       <List
+        {...LIST_STYLE}
         navigationTitle="frp 管理器"
         toolbar={toolbar}
         sheet={releaseNotes}
         refreshable={async () => { await probeAll(servers) }}
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       >
+        <Section>
+          <VStack {...BARE_ROW}>
+            <HeroCard onTap={() => { void probeAll(servers) }}>
+              <HStack spacing={8}>
+                <Image systemName="point.3.connected.trianglepath.dotted" font={15} foregroundStyle="rgba(255,255,255,0.85)" />
+                <Text font={14} fontWeight="semibold" foregroundStyle="rgba(255,255,255,0.85)">内网穿透</Text>
+                <Spacer />
+                <Text font={12} foregroundStyle="rgba(255,255,255,0.75)">{checking ? "检测中…" : "轻点重新检测"}</Text>
+              </HStack>
+              <ValueText
+                value={String(onlineCount)}
+                unit={`/ ${servers.length} 在线`}
+                size={UI.heroFont}
+                color="white"
+                unitColor="rgba(255,255,255,0.75)"
+              />
+              <HStack spacing={8}>
+                <HeroChip icon={serverIcon("frpc")} text={`frpc ${frpcCount}`} />
+                <HeroChip icon={serverIcon("frps")} text={`frps ${frpsCount}`} />
+              </HStack>
+            </HeroCard>
+          </VStack>
+        </Section>
+
         <Section
+          header={<Text>服务器</Text>}
           footer={
             <Text font={13}>
-              左右滑动条目可编辑 / 删除。frpc 填 admin 端口，frps 填 dashboard 端口；状态为 /healthz 探测结果。
+              左滑条目可编辑 / 删除。frpc 填 admin 端口，frps 填 dashboard 端口；状态为 /healthz 探测结果。
             </Text>
           }
         >
           {servers.length === 0 ? (
-            <Text font={15} foregroundStyle="secondaryLabel">
-              还没有服务器。点右上角 + 添加 frpc / frps 条目。
-            </Text>
+            <VStack spacing={12} padding={{ vertical: 6 }}>
+              <EmptyState icon="server.rack" title="还没有服务器" message="添加 frpc 客户端或 frps 服务端条目后即可管理代理" />
+              <Button
+                title="添加服务器"
+                systemImage="plus"
+                buttonStyle="borderedProminent"
+                action={() => setEditor({ mode: "add" })}
+              />
+            </VStack>
           ) : (
             servers.map((s) => (
               <NavigationLink
@@ -161,60 +210,62 @@ export function FrpManagerApp() {
                 }
               >
                 <HStack
-                  spacing={10}
+                  spacing={12}
+                  padding={{ vertical: 4 }}
                   frame={{ maxWidth: "infinity", alignment: "leading" }}
                   trailingSwipeActions={{
                     allowsFullSwipe: false,
                     actions: [
                       <Button title="删除" role="destructive" action={() => { void removeServer(s) }} />,
-                      <Button title="编辑" action={() => setEditing(s)} />,
+                      <Button title="编辑" action={() => setEditor({ mode: "edit", server: s })} />,
                     ],
                   }}
+                  contextMenu={{
+                    menuItems: (
+                      <Group>
+                        <Button title="编辑" systemImage="pencil" action={() => setEditor({ mode: "edit", server: s })} />
+                        <Button title="删除" systemImage="trash" role="destructive" action={() => { void removeServer(s) }} />
+                      </Group>
+                    ),
+                  }}
                 >
-                  <Image
-                    systemName={serverIcon(s.kind)}
-                    font={20}
-                    foregroundStyle={s.kind === "frpc" ? "systemBlue" : "systemIndigo"}
-                    frame={{ width: 28, height: 28 }}
-                  />
-                  <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+                  <IconBadge icon={serverIcon(s.kind)} tone={serverTone(s.kind)} size={40} filled />
+                  <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity", alignment: "leading" }}>
                     <HStack spacing={6}>
-                      <Text font={17}>{s.name}</Text>
-                      <Text font={11} foregroundStyle="secondaryLabel">{s.kind}</Text>
+                      <Text font={16} fontWeight="semibold" lineLimit={1}>{s.name}</Text>
+                      <Tag text={s.kind} tone={serverTone(s.kind)} mono />
                     </HStack>
-                    <Text font={13} foregroundStyle="secondaryLabel" lineLimit={1}>
-                      {s.url}
+                    <Text font={12} fontDesign="monospaced" foregroundStyle="secondaryLabel" lineLimit={1}>
+                      {s.url || "未填写地址"}
                     </Text>
                   </VStack>
-                  <StatusDot status={statuses[s.id] ?? "checking"} />
+                  <ServerStatusPill status={statuses[s.id] ?? "checking"} />
                 </HStack>
               </NavigationLink>
             ))
           )}
-        </Section>
-        <Section>
-          <Button title="添加服务器" systemImage="plus.circle" action={() => setAdding(true)} />
         </Section>
       </List>
     </NavigationStack>
   )
 }
 
-function StatusDot({ status }: { status: ServerStatus }) {
-  if (status === "checking") {
-    return <Text font={12} foregroundStyle="tertiaryLabel">检测中…</Text>
-  }
-  const online = status === "online"
+function HeroChip({ icon, text }: { icon: string; text: string }) {
   return (
-    <HStack spacing={4}>
-      <Image
-        systemName="circle.fill"
-        font={9}
-        foregroundStyle={online ? "systemGreen" : "systemRed"}
-      />
-      <Text font={12} foregroundStyle={online ? "systemGreen" : "systemRed"}>
-        {online ? "在线" : "离线"}
-      </Text>
+    <HStack
+      spacing={5}
+      padding={{ horizontal: 10, vertical: 5 }}
+      background={{ style: "rgba(255,255,255,0.18)", shape: "capsule" }}
+    >
+      <Image systemName={icon} font={11} foregroundStyle="white" />
+      <Text font={12} fontWeight="semibold" fontDesign="rounded" foregroundStyle="white">{text}</Text>
     </HStack>
   )
+}
+
+export function ServerStatusPill({ status }: { status: ServerStatus }) {
+  if (status === "checking") return <StatusPill kind="busy" label="检测中" compact />
+  return status === "online"
+    ? <StatusPill kind="ok" label="在线" compact />
+    : <StatusPill kind="error" label="离线" compact />
 }

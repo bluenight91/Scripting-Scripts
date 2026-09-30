@@ -1,9 +1,8 @@
-// frpc 详情：代理状态列表（/api/status），配置 / Store / 停止 入口
+// frpc 详情：概览指标 + 按类型筛选的代理列表（/api/status），配置 / Store / 停止 入口
 import {
   Button,
   Dialog,
   HStack,
-  Image,
   List,
   NavigationLink,
   Section,
@@ -17,6 +16,20 @@ import {
   type FrpServer,
 } from "../lib/servers"
 import { frpcStatus, frpcStop, type FrpcProxyStatus, type FrpcStatus } from "../lib/frpApi"
+import {
+  BARE_ROW,
+  ChipBar,
+  EmptyState,
+  IconBadge,
+  LIST_STYLE,
+  ListRow,
+  MetricTile,
+  StatusPill,
+  Tag,
+  type ChipItem,
+  type StatusKind,
+} from "../components/Kit"
+import { TONES } from "../lib/theme"
 import { FrpcConfigView } from "./FrpcConfigView"
 import { FrpcStoreView } from "./FrpcStoreView"
 
@@ -29,36 +42,34 @@ function orderedGroups(status: FrpcStatus): [string, FrpcProxyStatus[]][] {
   return [...known, ...rest].map((k) => [k, status[k] ?? []])
 }
 
-function ProxyRow({ p }: { p: FrpcProxyStatus }) {
-  const running = p.status === "running"
+function proxyState(p: FrpcProxyStatus): { kind: StatusKind; failed: boolean; running: boolean } {
   const failed = !!p.err || /error/i.test(p.status)
+  const running = !failed && p.status === "running"
+  return { kind: failed ? "error" : running ? "ok" : "warn", failed, running }
+}
+
+function ProxyRow({ p }: { p: FrpcProxyStatus }) {
+  const st = proxyState(p)
   return (
-    <HStack spacing={10} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-      <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+    <HStack spacing={12} padding={{ vertical: 3 }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+      <IconBadge
+        icon={st.failed ? "exclamationmark.triangle.fill" : st.running ? "arrow.left.arrow.right" : "pause.fill"}
+        tone={st.failed ? "red" : st.running ? "green" : "orange"}
+        size={32}
+      />
+      <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity", alignment: "leading" }}>
         <HStack spacing={6}>
-          <Text font={16}>{p.name}</Text>
-          <Text font={11} foregroundStyle="secondaryLabel">{p.type}</Text>
+          <Text font={15} fontWeight="semibold" lineLimit={1}>{p.name}</Text>
+          <Tag text={p.type} mono />
         </HStack>
-        <Text font={13} foregroundStyle="secondaryLabel" lineLimit={1}>
-          {p.local_addr || "—"} → {p.remote_addr || "—"}
+        <Text font={12} fontDesign="monospaced" foregroundStyle="secondaryLabel" lineLimit={1} minScaleFactor={0.8}>
+          {`${p.local_addr || "—"} → ${p.remote_addr || "—"}`}
         </Text>
-        {failed && p.err ? (
-          <Text font={12} foregroundStyle="systemRed" lineLimit={2}>{p.err}</Text>
+        {st.failed && p.err ? (
+          <Text font={12} foregroundStyle={TONES.red.fg} lineLimit={2}>{p.err}</Text>
         ) : null}
       </VStack>
-      <HStack spacing={4}>
-        <Image
-          systemName="circle.fill"
-          font={8}
-          foregroundStyle={failed ? "systemRed" : running ? "systemGreen" : "systemOrange"}
-        />
-        <Text
-          font={12}
-          foregroundStyle={failed ? "systemRed" : running ? "systemGreen" : "systemOrange"}
-        >
-          {p.status || "未知"}
-        </Text>
-      </HStack>
+      <StatusPill kind={st.kind} label={p.status || "未知"} compact />
     </HStack>
   )
 }
@@ -68,6 +79,7 @@ export function FrpcView({ server }: { server: FrpServer }) {
   const [error, setError] = useState<string | null>(null)
   const [stopping, setStopping] = useState(false)
   const [stopMsg, setStopMsg] = useState<string | null>(null)
+  const [filter, setFilter] = useState<string>("all")
 
   async function load() {
     setError(null)
@@ -104,40 +116,67 @@ export function FrpcView({ server }: { server: FrpServer }) {
   }
 
   const groups = status ? orderedGroups(status) : []
+  const all = groups.flatMap(([, list]) => list)
+  const runningCount = all.filter((p) => proxyState(p).running).length
+  const failedCount = all.filter((p) => proxyState(p).failed).length
+  const activeFilter = filter === "all" || groups.some(([t]) => t === filter) ? filter : "all"
+  const shown = activeFilter === "all" ? all : groups.find(([t]) => t === activeFilter)?.[1] ?? []
+  const chips: ChipItem<string>[] = [
+    { id: "all", title: "全部", count: all.length },
+    ...groups.map(([t, list]) => ({ id: t, title: t.toUpperCase(), count: list.length })),
+  ]
 
   return (
     <List
+      {...LIST_STYLE}
       navigationTitle={server.name}
       refreshable={load}
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
     >
+      <Section>
+        <VStack {...BARE_ROW} spacing={10}>
+          <HStack spacing={10}>
+            <MetricTile icon="arrow.triangle.branch" tone="accent" title="代理" value={status ? String(all.length) : "—"} />
+            <MetricTile icon="checkmark.circle.fill" tone="green" title="运行中" value={status ? String(runningCount) : "—"} />
+            <MetricTile
+              icon="exclamationmark.triangle.fill"
+              tone={failedCount > 0 ? "red" : "gray"}
+              title="异常"
+              value={status ? String(failedCount) : "—"}
+            />
+          </HStack>
+          {groups.length > 1 ? <ChipBar items={chips} value={activeFilter} onChange={setFilter} /> : null}
+        </VStack>
+      </Section>
+
       {error ? (
         <Section>
-          <Text font={14} foregroundStyle="systemRed">{error}</Text>
+          <HStack spacing={10}>
+            <IconBadge icon="wifi.exclamationmark" tone="red" />
+            <Text font={13} foregroundStyle={TONES.red.fg}>{error}</Text>
+          </HStack>
         </Section>
       ) : null}
-      {status && groups.length === 0 ? (
-        <Section>
-          <Text font={15} foregroundStyle="secondaryLabel">当前没有任何代理。</Text>
-        </Section>
-      ) : null}
-      {groups.map(([type, list]) => (
-        <Section key={type} header={<Text font={13}>{type.toUpperCase()}（{list.length}）</Text>}>
-          {list.map((p) => (
-            <ProxyRow key={`${p.type}:${p.name}`} p={p} />
-          ))}
-        </Section>
-      ))}
-      <Section header={<Text font={13}>配置</Text>}>
+
+      <Section header={<Text>{activeFilter === "all" ? "代理" : activeFilter.toUpperCase()}</Text>}>
+        {status === null && !error ? (
+          <EmptyState icon="hourglass" title="加载中…" />
+        ) : status && all.length === 0 ? (
+          <EmptyState icon="tray" title="当前没有任何代理" message="在 frpc 配置或 Store 中添加代理" />
+        ) : (
+          shown.map((p) => <ProxyRow key={`${p.type}:${p.name}`} p={p} />)
+        )}
+      </Section>
+
+      <Section header={<Text>管理</Text>}>
         <NavigationLink destination={<FrpcConfigView server={server} />}>
-          <Text font={16}>查看 / 编辑配置</Text>
+          <ListRow icon="doc.text.fill" tone="orange" title="配置文件" subtitle="查看 / 编辑 frpc.toml 并热重载" />
         </NavigationLink>
-      </Section>
-      <Section header={<Text font={13}>Store</Text>}>
         <NavigationLink destination={<FrpcStoreView server={server} />}>
-          <Text font={16}>动态代理管理</Text>
+          <ListRow icon="shippingbox.fill" tone="teal" title="Store 动态代理" subtitle="无需改配置即可增删代理" />
         </NavigationLink>
       </Section>
+
       <Section
         footer={
           <Text font={13}>
@@ -145,13 +184,9 @@ export function FrpcView({ server }: { server: FrpServer }) {
           </Text>
         }
       >
-        <Button
-          title={stopping ? "停止中…" : "停止 frpc"}
-          role="destructive"
-          systemImage="stop.circle"
-          disabled={stopping}
-          action={() => { void stop() }}
-        />
+        <Button disabled={stopping} action={() => { void stop() }}>
+          <ListRow icon="stop.fill" tone="red" title={stopping ? "停止中…" : "停止 frpc"} titleColor="systemRed" />
+        </Button>
       </Section>
     </List>
   )

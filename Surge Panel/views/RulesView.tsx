@@ -1,4 +1,4 @@
-// 规则浏览器：全量规则 + 搜索/类型/策略筛选
+// 分流 → 规则：全量规则 + 搜索/类型/策略筛选
 import {
   HStack,
   List,
@@ -7,16 +7,15 @@ import {
   Section,
   Spacer,
   Text,
-  TextField,
   useEffect,
   useState,
   VStack,
-  type Color,
 } from "scripting"
 import { getRules } from "../lib/surgeApi"
 import { needsSetup, useStoreSelector } from "../lib/store"
-import { connectErrorText } from "../lib/ui"
-import { RequestsSegmentBar } from "../components/RequestsSegmentBar"
+import { connectErrorText, type Tone } from "../lib/ui"
+import { BARE_ROW, EmptyState, LIST_STYLE, SearchField, Tag } from "../components/Kit"
+import { RoutingChips } from "../components/SegmentChips"
 
 type ParsedRule = {
   raw: string
@@ -46,15 +45,15 @@ function parseRule(raw: string): ParsedRule {
   }
 }
 
-const TYPE_COLORS: Record<string, Color> = {
-  DOMAIN: "systemBlue",
-  "DOMAIN-SUFFIX": "systemIndigo",
-  "DOMAIN-KEYWORD": "systemPurple",
-  "IP-CIDR": "systemTeal",
-  "IP-CIDR6": "systemTeal",
-  GEOIP: "systemOrange",
-  "RULE-SET": "systemPink",
-  FINAL: "systemGray",
+const TYPE_TONES: Record<string, Tone> = {
+  DOMAIN: "blue",
+  "DOMAIN-SUFFIX": "accent",
+  "DOMAIN-KEYWORD": "purple",
+  "IP-CIDR": "teal",
+  "IP-CIDR6": "teal",
+  GEOIP: "orange",
+  "RULE-SET": "pink",
+  FINAL: "gray",
 }
 
 export function RulesView() {
@@ -101,22 +100,25 @@ export function RulesView() {
 
   return (
     <List
-      navigationTitle={Script.env === "home_screen" ? undefined : "规则"}
+      navigationTitle={Script.env === "home_screen" ? undefined : "分流"}
       refreshable={async () => { await load() }}
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+      {...LIST_STYLE}
     >
       <Section>
-        <RequestsSegmentBar />
+        <VStack {...BARE_ROW}>
+          <RoutingChips />
+        </VStack>
       </Section>
       {error ? (
         <Section>
-          <Text foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
+          <Text font={14} foregroundStyle="systemRed">{connectErrorText(error, "加载失败")}</Text>
         </Section>
       ) : null}
 
       {/* 筛选 */}
       <Section>
-        <TextField title="搜索" value={search} onChanged={setSearch} prompt="域名 / 策略 / 模块" />
+        <SearchField value={search} onChanged={setSearch} prompt="域名 / 策略 / 模块" />
         <Picker title="类型" value={typeFilter} onChanged={setTypeFilter}>
           <Text tag="__all__">全部类型</Text>
           {types.map((t) => (
@@ -134,7 +136,7 @@ export function RulesView() {
       {/* 规则列表 */}
       {rules === null ? (
         <Section>
-          <Text foregroundStyle="secondaryLabel">加载中…</Text>
+          <EmptyState icon="hourglass" title="加载中…" />
         </Section>
       ) : (
         <Section
@@ -142,22 +144,20 @@ export function RulesView() {
           footer={<Text font={12}>规则按配置文件顺序匹配，越靠前优先级越高</Text>}
         >
           {filtered.length === 0 ? (
-            <Text foregroundStyle="secondaryLabel">无匹配规则</Text>
+            <EmptyState icon="line.3.horizontal.decrease.circle" title="无匹配规则" />
           ) : (
             filtered.map((r, i) => (
-              <VStack key={`${i}-${r.raw}`} alignment="leading" spacing={2}>
+              <VStack key={`${i}-${r.raw}`} alignment="leading" spacing={4}>
                 <HStack spacing={6}>
-                  <Text font={10} foregroundStyle={TYPE_COLORS[r.type] ?? "secondaryLabel"}>
-                    {r.type}
-                  </Text>
+                  <Tag text={r.type} tone={TYPE_TONES[r.type] ?? "gray"} mono />
                   <Spacer />
-                  <Text font={11} foregroundStyle="secondaryLabel">{r.policy}</Text>
+                  <Text font={12} fontWeight="medium" foregroundStyle="secondaryLabel" lineLimit={1}>{r.policy}</Text>
                 </HStack>
                 {r.value ? (
-                  <Text font={13} lineLimit={1} minScaleFactor={0.6}>{r.value}</Text>
+                  <Text font={14} fontDesign="monospaced" lineLimit={1} minScaleFactor={0.6}>{r.value}</Text>
                 ) : null}
                 {r.module ? (
-                  <Text font={10} foregroundStyle="tertiaryLabel" lineLimit={1}>
+                  <Text font={11} foregroundStyle="tertiaryLabel" lineLimit={1}>
                     {`来自模块：${r.module}`}
                   </Text>
                 ) : null}

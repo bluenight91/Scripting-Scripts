@@ -6,7 +6,6 @@ import {
   NavigationLink,
   Picker,
   Section,
-  Spacer,
   Text,
   TextField,
   useEffect,
@@ -15,6 +14,8 @@ import {
 } from "scripting"
 import { evaluateScript, getScripts, runCronScript, type SurgeScript } from "../lib/surgeApi"
 import { useStoreSelector } from "../lib/store"
+import { EmptyState, IconBadge, LIST_STYLE, ListRow, Tag } from "../components/Kit"
+import { IS_GLASS, TONES, type Tone } from "../lib/ui"
 
 const TYPE_LABELS: Record<string, string> = {
   cron: "定时",
@@ -25,6 +26,17 @@ const TYPE_LABELS: Record<string, string> = {
   dns: "DNS",
   event: "事件",
   tile: "卡片",
+}
+
+const TYPE_VISUALS: Record<string, { icon: string; tone: Tone }> = {
+  cron: { icon: "clock.fill", tone: "orange" },
+  generic: { icon: "curlybraces", tone: "purple" },
+  "http-request": { icon: "arrow.up.doc.fill", tone: "blue" },
+  "http-response": { icon: "arrow.down.doc.fill", tone: "teal" },
+  rule: { icon: "list.bullet.indent", tone: "accent" },
+  dns: { icon: "server.rack", tone: "green" },
+  event: { icon: "bell.fill", tone: "pink" },
+  tile: { icon: "square.grid.2x2.fill", tone: "yellow" },
 }
 
 function shortPath(p: string): string {
@@ -65,64 +77,71 @@ export function ScriptsView() {
   }
 
   return (
-    <List navigationTitle="脚本">
+    <List {...LIST_STYLE} navigationTitle="脚本">
       <Section>
-        <NavigationLink title="调试执行" destination={<ScriptEvaluateView />} />
+        <NavigationLink destination={<ScriptEvaluateView />}>
+          <ListRow icon="terminal.fill" tone="gray" title="调试执行" subtitle="在当前实例上运行一段脚本" />
+        </NavigationLink>
       </Section>
       {error ? (
         <Section>
-          <Text foregroundStyle="systemRed">{error}</Text>
+          <Text foregroundStyle={TONES.red.fg}>{error}</Text>
         </Section>
       ) : null}
       {scripts === null ? (
-        <Section>
-          <Text foregroundStyle="secondaryLabel">加载中…</Text>
-        </Section>
+        error ? null : (
+          <Section>
+            <EmptyState icon="hourglass" title="加载中…" />
+          </Section>
+        )
       ) : scripts.length === 0 ? (
         <Section>
-          <Text foregroundStyle="secondaryLabel">未配置任何脚本</Text>
+          <EmptyState icon="scroll" title="未配置任何脚本" message="在 Surge 配置的 [Script] 段添加后会显示在这里" />
         </Section>
       ) : (
         <Section
           header={<Text>{`${scripts.length} 个脚本`}</Text>}
           footer={<Text font={12}>定时脚本可手动触发。开关需在 Surge 配置中修改。</Text>}
         >
-          {scripts.map((s) => (
-            <VStack key={s.name} alignment="leading" spacing={3}>
-              <HStack spacing={8}>
-                <Text font={15}>{s.name}</Text>
-                <Text font={10} foregroundStyle={s.enabled ? "systemGreen" : "secondaryLabel"}>
-                  {s.enabled ? "已启用" : "已停用"}
-                </Text>
-                <Spacer />
-                <Text font={11} foregroundStyle="secondaryLabel">
-                  {TYPE_LABELS[s.type] ?? s.type}
-                </Text>
-              </HStack>
-              <Text font={11} foregroundStyle="tertiaryLabel" lineLimit={1} minScaleFactor={0.7}>
-                {shortPath(s.path)}
-              </Text>
-              {s.type === "cron" && s.enabled ? (
-                <HStack spacing={8}>
-                  <Button
-                    title={running === s.name ? "执行中…" : "立即执行"}
-                    systemImage="play.circle"
-                    disabled={running !== null}
-                    action={() => runCron(s.name)}
-                  />
-                  {results[s.name] ? (
-                    <Text
-                      font={11}
-                      foregroundStyle={results[s.name].startsWith("✓") ? "systemGreen" : "systemRed"}
-                      lineLimit={1}
-                    >
-                      {results[s.name]}
-                    </Text>
+          {scripts.map((s) => {
+            const visual = TYPE_VISUALS[s.type] ?? { icon: "doc.fill", tone: "gray" as Tone }
+            const result = results[s.name]
+            return (
+              <HStack key={s.name} spacing={12} alignment="top" padding={{ vertical: 4 }}>
+                <IconBadge icon={visual.icon} tone={s.enabled ? visual.tone : "gray"} size={32} />
+                <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+                  <HStack spacing={6}>
+                    <Text font={15} fontWeight="semibold" lineLimit={1}>{s.name}</Text>
+                    <Tag text={TYPE_LABELS[s.type] ?? s.type} tone={visual.tone} />
+                    {s.enabled ? null : <Tag text="已停用" tone="gray" />}
+                  </HStack>
+                  <Text font={11} fontDesign="monospaced" foregroundStyle="tertiaryLabel" lineLimit={1} minScaleFactor={0.7}>
+                    {shortPath(s.path)}
+                  </Text>
+                  {s.type === "cron" && s.enabled ? (
+                    <HStack spacing={8}>
+                      <Button
+                        title={running === s.name ? "执行中…" : "立即执行"}
+                        systemImage="play.fill"
+                        buttonStyle="bordered"
+                        disabled={running !== null}
+                        action={() => runCron(s.name)}
+                      />
+                      {result ? (
+                        <Text
+                          font={11}
+                          foregroundStyle={result.startsWith("✓") ? TONES.green.fg : TONES.red.fg}
+                          lineLimit={1}
+                        >
+                          {result}
+                        </Text>
+                      ) : null}
+                    </HStack>
                   ) : null}
-                </HStack>
-              ) : null}
-            </VStack>
-          ))}
+                </VStack>
+              </HStack>
+            )
+          })}
         </Section>
       )}
     </List>
@@ -151,7 +170,7 @@ function ScriptEvaluateView() {
   }
 
   return (
-    <List navigationTitle="调试执行">
+    <List {...LIST_STYLE} navigationTitle="调试执行">
       <Section footer={<Text font={13}>POST /v1/scripting/evaluate。$trigger 为 http-api。</Text>}>
         <Picker title="类型" value={mockType} onChanged={setMockType}>
           <Text tag="cron">cron</Text>
@@ -167,11 +186,17 @@ function ScriptEvaluateView() {
           onChanged={setCode}
           prompt="script_text"
         />
-        <Button title={busy ? "执行中…" : "执行"} systemImage="play.circle" disabled={busy} action={() => { void run() }} />
+        <Button
+          title={busy ? "执行中…" : "执行"}
+          systemImage="play.fill"
+          buttonStyle={IS_GLASS ? "glassProminent" : "borderedProminent"}
+          disabled={busy}
+          action={() => { void run() }}
+        />
       </Section>
       {result ? (
         <Section header={<Text>结果</Text>}>
-          <Text font={13} multilineTextAlignment="leading">{result}</Text>
+          <Text font={12} fontDesign="monospaced" multilineTextAlignment="leading">{result}</Text>
         </Section>
       ) : null}
     </List>

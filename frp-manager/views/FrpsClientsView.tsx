@@ -1,8 +1,7 @@
-// frps 客户端列表：可按 online / offline / all 过滤
+// frps 客户端列表：按 online / offline / all 过滤
 import {
   HStack,
   List,
-  Picker,
   Section,
   Text,
   useEffect,
@@ -11,20 +10,25 @@ import {
 } from "scripting"
 import { connOf, type FrpServer } from "../lib/servers"
 import { frpsClients, type FrpsClient, type FrpsClientStatus } from "../lib/frpApi"
+import { BARE_ROW, ChipBar, EmptyState, IconBadge, LIST_STYLE, StatusPill, Tag, type ChipItem } from "../components/Kit"
+import { TONES } from "../lib/theme"
 
-const FILTERS: { tag: FrpsClientStatus; label: string }[] = [
-  { tag: "online", label: "在线" },
-  { tag: "offline", label: "离线" },
-  { tag: "all", label: "全部" },
+const FILTERS: ChipItem<FrpsClientStatus>[] = [
+  { id: "online", title: "在线", icon: "circle.fill" },
+  { id: "offline", title: "离线", icon: "circle" },
+  { id: "all", title: "全部", icon: "square.grid.2x2" },
 ]
 
 function clientTitle(c: FrpsClient): string {
   return c.hostname || c.runId || "未知客户端"
 }
 
-function clientSubtitle(c: FrpsClient): string {
-  const bits = [c.user ? `user: ${c.user}` : null, c.version ? `v${c.version}` : null, c.os, c.arch]
-  return bits.filter(Boolean).join(" · ") || "—"
+function osIcon(os?: string): string {
+  const o = (os ?? "").toLowerCase()
+  if (o.includes("darwin") || o.includes("mac")) return "laptopcomputer"
+  if (o.includes("windows")) return "pc"
+  if (o.includes("android") || o.includes("ios")) return "iphone"
+  return "desktopcomputer"
 }
 
 export function FrpsClientsView({ server }: { server: FrpServer }) {
@@ -47,54 +51,55 @@ export function FrpsClientsView({ server }: { server: FrpServer }) {
     void load(filter)
   }, [filter])
 
+  const list = clients ?? []
+
   return (
     <List
+      {...LIST_STYLE}
       navigationTitle="客户端"
       refreshable={async () => { await load(filter) }}
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
     >
-      <Section footer={<Text font={13}>{error ?? `共 ${clients?.length ?? 0} 个客户端。`}</Text>}>
-        <Picker
-          label={<Text>过滤</Text>}
-          pickerStyle="segmented"
-          value={filter}
-          onChanged={(v: string) => setFilter(v as FrpsClientStatus)}
-        >
-          {FILTERS.map((f) => (
-            <Text key={f.tag} tag={f.tag}>{f.label}</Text>
-          ))}
-        </Picker>
+      <Section>
+        <VStack {...BARE_ROW}>
+          <ChipBar items={FILTERS} value={filter} onChange={setFilter} />
+        </VStack>
       </Section>
-      {clients === null && !error ? (
-        <Section>
-          <Text font={15} foregroundStyle="secondaryLabel">加载中…</Text>
-        </Section>
-      ) : (
-        <Section>
-          {(clients ?? []).map((c, i) => (
-            <HStack
-              key={c.runId ?? `${clientTitle(c)}-${i}`}
-              spacing={10}
-              frame={{ maxWidth: "infinity", alignment: "leading" }}
-            >
-              <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-                <Text font={16}>{clientTitle(c)}</Text>
-                <Text font={13} foregroundStyle="secondaryLabel" lineLimit={1}>
-                  {clientSubtitle(c)}
-                </Text>
-              </VStack>
-              {c.status ? (
-                <Text
-                  font={12}
-                  foregroundStyle={c.status === "online" ? "systemGreen" : "systemRed"}
-                >
-                  {c.status === "online" ? "在线" : "离线"}
-                </Text>
-              ) : null}
-            </HStack>
-          ))}
-        </Section>
-      )}
+      <Section
+        header={clients ? <Text>{`${list.length} 个客户端`}</Text> : undefined}
+        footer={error ? <Text font={13} foregroundStyle={TONES.red.fg}>{error}</Text> : undefined}
+      >
+        {clients === null && !error ? (
+          <EmptyState icon="hourglass" title="加载中…" />
+        ) : list.length === 0 && !error ? (
+          <EmptyState icon="desktopcomputer" title="没有客户端" />
+        ) : (
+          list.map((c, i) => {
+            const isOnline = c.status === "online"
+            return (
+              <HStack
+                key={c.runId ?? `${clientTitle(c)}-${i}`}
+                spacing={12}
+                padding={{ vertical: 3 }}
+                frame={{ maxWidth: "infinity", alignment: "leading" }}
+              >
+                <IconBadge icon={osIcon(c.os)} tone={isOnline ? "blue" : "gray"} size={34} />
+                <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+                  <Text font={15} fontWeight="semibold" lineLimit={1}>{clientTitle(c)}</Text>
+                  <HStack spacing={5}>
+                    {c.version ? <Tag text={`v${c.version}`} mono /> : null}
+                    {c.os ? <Tag text={c.arch ? `${c.os}/${c.arch}` : c.os} mono /> : null}
+                    {c.user ? <Tag text={c.user} tone="accent" /> : null}
+                  </HStack>
+                </VStack>
+                {c.status ? (
+                  <StatusPill kind={isOnline ? "ok" : "idle"} label={isOnline ? "在线" : "离线"} compact />
+                ) : null}
+              </HStack>
+            )
+          })
+        )}
+      </Section>
     </List>
   )
 }

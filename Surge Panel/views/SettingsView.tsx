@@ -1,4 +1,4 @@
-// 设置 Tab：连接、面板、引擎、脚本、配置
+// 设置 Tab：实例卡片、引擎、功能、面板、关于、维护
 import {
   Button,
   HStack,
@@ -42,12 +42,22 @@ import { ChangelogView } from "../components/ReleaseNotesSheet"
 import { clearHistory, needsSetup, savePrefs, useStoreSelector } from "../lib/store"
 import { ScriptsView } from "./ScriptsView"
 import { InstancesView } from "./InstancesView"
+import { ConnectionPill } from "../components/ConnectionStatus"
+import { IconBadge, LIST_STYLE, ListRow, Tag } from "../components/Kit"
+import type { Tone } from "../lib/ui"
 
 const ENGINE_FEATURE_LABELS: Record<FeatureKey, string> = {
   mitm: "MitM",
   capture: "捕获 HTTP 请求",
   rewrite: "重写",
   scripting: "脚本",
+}
+
+const FEATURE_ICONS: Record<FeatureKey, { icon: string; tone: Tone }> = {
+  mitm: { icon: "lock.shield.fill", tone: "accent" },
+  capture: { icon: "record.circle", tone: "red" },
+  rewrite: { icon: "arrow.2.squarepath", tone: "orange" },
+  scripting: { icon: "curlybraces", tone: "purple" },
 }
 
 /** 「历史长度」的时长说明按当前刷新间隔换算 */
@@ -155,6 +165,7 @@ export function SettingsView() {
   }
 
   async function changeLogLevel(level: string) {
+    setLogLevel(level)
     try {
       await setSurgeLogLevel(config, level)
       setActionMsg(`日志级别已切换为 ${level}（仅当前会话有效）`)
@@ -193,9 +204,12 @@ export function SettingsView() {
   }
 
   const instanceAddrNote = displayPrimaryAddrs(localAddrs, prefs.hideAddresses)
+  const setup = needsSetup()
+  const activeName = instances.find((i) => i.id === activeId)?.name
 
   return (
     <List
+      {...LIST_STYLE}
       navigationTitle={Script.env === "home_screen" ? undefined : "设置"}
       confirmationDialog={{
         isPresented: confirm !== null,
@@ -221,22 +235,97 @@ export function SettingsView() {
         ),
       }}
     >
-      {/* 实例 */}
-      <Section header={<Text>实例</Text>} footer={<Text font={13}>{needsSetup() ? "还没有可连接的实例。先添加本机或网关 HTTP API 并填写 Key。" : `可添加本机与网关等多个 Surge HTTP API，点按切换。当前：${instances.find((i) => i.id === activeId)?.name ?? "—"}（${displayHostPort(config.host, config.port, prefs.hideAddresses)}）${instanceAddrNote ? ` · ${instanceAddrNote}` : ""}`}</Text>}>
-        <NavigationLink title="管理实例" destination={<InstancesView />} />
+      <Section>
+        <NavigationLink destination={<InstancesView />}>
+          <HStack spacing={14} padding={{ vertical: 6 }}>
+            <IconBadge icon="server.rack" tone="accent" size={48} filled />
+            <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+              <Text font={19} fontWeight="bold" fontDesign="rounded" lineLimit={1}>
+                {setup ? "添加 Surge 实例" : activeName ?? "未命名实例"}
+              </Text>
+              <Text font={12} foregroundStyle="secondaryLabel" lineLimit={2}>
+                {setup
+                  ? "填写本机或网关的 HTTP API 地址与 Key"
+                  : `${displayHostPort(config.host, config.port, prefs.hideAddresses)}${instanceAddrNote ? ` · ${instanceAddrNote}` : ""}`}
+              </Text>
+              <HStack spacing={6}>
+                <ConnectionPill compact />
+                {instances.length > 1 ? <Tag text={`${instances.length} 个实例`} tone="accent" /> : null}
+              </HStack>
+            </VStack>
+          </HStack>
+        </NavigationLink>
       </Section>
 
-      {/* 面板 */}
+      <Section
+        header={<Text>引擎</Text>}
+        footer={engineError ? <Text font={13} foregroundStyle="systemRed">{engineError}</Text> : undefined}
+      >
+        {outbound === null ? (
+          <ListRow
+            icon="arrow.triangle.swap"
+            tone="blue"
+            title="出站模式"
+            subtitle={setup ? "连接实例后可用" : engineError ? "出站模式不可用" : "加载中…"}
+          />
+        ) : (
+          <VStack alignment="leading" spacing={10} padding={{ vertical: 4 }}>
+            <ListRow icon="arrow.triangle.swap" tone="blue" title="出站模式" />
+            <Picker title="出站模式" pickerStyle="segmented" value={outbound} onChanged={changeOutbound}>
+              <Text tag="rule">规则</Text>
+              <Text tag="proxy">全局代理</Text>
+              <Text tag="direct">直连</Text>
+            </Picker>
+          </VStack>
+        )}
+        {outbound === "proxy" && globalPolicy !== null ? (
+          <Picker title="全局策略" value={globalPolicy} onChanged={changeGlobalPolicy}>
+            {policyChoices.map((p) => (
+              <Text key={p} tag={p}>{p}</Text>
+            ))}
+          </Picker>
+        ) : null}
+        <Picker title="日志级别" value={logLevel} onChanged={changeLogLevel}>
+          <Text tag="verbose">verbose（最详细）</Text>
+          <Text tag="info">info</Text>
+          <Text tag="notify">notify</Text>
+          <Text tag="warning">warning</Text>
+          <Text tag="error">error（最少）</Text>
+        </Picker>
+      </Section>
+
+      <Section header={<Text>功能</Text>} footer={<Text font={13}>开关立即写入当前实例。模块页支持搜索。</Text>}>
+        {features === null ? (
+          <Text font={14} foregroundStyle="secondaryLabel">
+            {setup ? "连接实例后可切换功能" : engineError ? "功能开关不可用" : "加载功能开关…"}
+          </Text>
+        ) : (
+          (Object.keys(ENGINE_FEATURE_LABELS) as FeatureKey[]).map((k) => (
+            <Toggle key={k} value={features[k]} onChanged={(v: boolean) => toggleFeature(k, v)}>
+              <ListRow icon={FEATURE_ICONS[k].icon} tone={FEATURE_ICONS[k].tone} title={ENGINE_FEATURE_LABELS[k]} />
+            </Toggle>
+          ))
+        )}
+        {setup ? null : (
+          <NavigationLink destination={<ModulesView />}>
+            <ListRow icon="puzzlepiece.extension.fill" tone="teal" title="模块" />
+          </NavigationLink>
+        )}
+        <NavigationLink destination={<ScriptsView />}>
+          <ListRow icon="scroll.fill" tone="pink" title="脚本" subtitle="定时 / 通用脚本手动执行" />
+        </NavigationLink>
+        <NavigationLink destination={<ProfileView />}>
+          <ListRow icon="doc.text.fill" tone="gray" title="当前配置" subtitle="按分段浏览，可搜索" />
+        </NavigationLink>
+      </Section>
+
       <Section
         header={<Text>面板</Text>}
-        footer={<Text font={13}>刷新间隔用于内存趋势与引擎指标。实时速率图固定 1 秒采样（/v1/traffic），与 Surge Web Dashboard 一致。总览点按地址也可隐藏本机 IP，方便截图。</Text>}
+        footer={<Text font={13}>刷新间隔用于内存趋势与引擎指标；实时速率固定 1 秒采样（/v1/traffic）。仪表盘点按地址也可隐藏本机 IP，方便截图。</Text>}
       >
-        <NavigationLink title="更新说明" destination={<ChangelogView />} />
-        <Toggle
-          title="自动刷新"
-          value={prefs.autoRefresh}
-          onChanged={(v: boolean) => savePrefs({ ...prefs, autoRefresh: v })}
-        />
+        <Toggle value={prefs.autoRefresh} onChanged={(v: boolean) => savePrefs({ ...prefs, autoRefresh: v })}>
+          <ListRow icon="arrow.clockwise" tone="green" title="自动刷新" />
+        </Toggle>
         <Picker
           title="刷新间隔"
           value={String(prefs.intervalSec)}
@@ -255,74 +344,38 @@ export function SettingsView() {
           <Text tag="360">{`360 点（${historyLenLabel(360, prefs.intervalSec)}）`}</Text>
           <Text tag="720">{`720 点（${historyLenLabel(720, prefs.intervalSec)}）`}</Text>
         </Picker>
-        <Toggle
-          title="隐藏总览地址"
-          value={prefs.hideAddresses}
-          onChanged={(v: boolean) => savePrefs({ ...prefs, hideAddresses: v })}
-        />
-        <Button title="清空采样历史" role="destructive" systemImage="trash" action={() => setConfirm("clearHistory")} />
+        <Toggle value={prefs.hideAddresses} onChanged={(v: boolean) => savePrefs({ ...prefs, hideAddresses: v })}>
+          <ListRow icon="eye.slash.fill" tone="gray" title="隐藏地址" />
+        </Toggle>
       </Section>
 
-      {/* 引擎：出站、功能开关、模块、日志 */}
-      <Section
-        header={<Text>引擎</Text>}
-        footer={
-          engineError ? (
-            <Text font={13} foregroundStyle="systemRed">{engineError}</Text>
-          ) : (
-            <Text font={13}>模块在子页开关，可用系统搜索栏筛选。</Text>
-          )
-        }
-      >
-        {outbound === null ? (
-          <Text foregroundStyle="secondaryLabel">{engineError ? "出站模式不可用" : "加载出站模式…"}</Text>
-        ) : (
-          <Picker title="出站模式" pickerStyle="segmented" value={outbound} onChanged={changeOutbound}>
-            <Text tag="rule">规则</Text>
-            <Text tag="proxy">代理</Text>
-            <Text tag="direct">直连</Text>
-          </Picker>
+      <Section header={<Text>关于</Text>}>
+        <NavigationLink destination={<ChangelogView />}>
+          <ListRow icon="sparkles" tone="yellow" title="更新说明" />
+        </NavigationLink>
+      </Section>
+
+      <Section header={<Text>维护</Text>} footer={actionMsg ? <Text font={13}>{actionMsg}</Text> : undefined}>
+        {setup ? null : (
+          <Button action={() => setConfirm("reload")}>
+            <ListRow icon="arrow.triangle.2.circlepath" tone="blue" title="重新加载配置" titleColor="label" />
+          </Button>
         )}
-        {outbound === "proxy" && globalPolicy !== null ? (
-          <Picker title="全局策略" value={globalPolicy} onChanged={changeGlobalPolicy}>
-            {policyChoices.map((p) => (
-              <Text key={p} tag={p}>{p}</Text>
-            ))}
-          </Picker>
-        ) : null}
-        <Picker title="日志级别" value={logLevel} onChanged={changeLogLevel}>
-          <Text tag="verbose">verbose（最详细）</Text>
-          <Text tag="info">info</Text>
-          <Text tag="notify">notify</Text>
-          <Text tag="warning">warning</Text>
-          <Text tag="error">error（最少）</Text>
-        </Picker>
-        {features === null ? (
-          <Text foregroundStyle="secondaryLabel">{engineError ? "功能开关不可用" : "加载功能开关…"}</Text>
-        ) : (
-          (Object.keys(ENGINE_FEATURE_LABELS) as FeatureKey[]).map((k) => (
-            <Toggle key={k} title={ENGINE_FEATURE_LABELS[k]} value={features[k]} onChanged={(v: boolean) => toggleFeature(k, v)} />
-          ))
+        <Button action={() => setConfirm("clearHistory")}>
+          <ListRow icon="trash.fill" tone="orange" title="清空采样历史" titleColor="label" />
+        </Button>
+        {setup ? null : (
+          <Button action={() => setConfirm("stop")}>
+            <ListRow icon="stop.fill" tone="red" title="停止引擎" titleColor="systemRed" />
+          </Button>
         )}
-        {needsSetup() ? null : <NavigationLink title="模块" destination={<ModulesView />} />}
       </Section>
 
-      {/* 脚本 */}
-      <Section header={<Text>脚本</Text>}>
-        <NavigationLink title="脚本管理" destination={<ScriptsView />} />
-      </Section>
-
-      {/* 配置 */}
-      <Section header={<Text>配置</Text>} footer={actionMsg ? <Text font={13}>{actionMsg}</Text> : undefined}>
-        <NavigationLink title="查看当前配置" destination={<ProfileView />} />
-        <Button title="重新加载配置" systemImage="arrow.triangle.2.circlepath" action={() => setConfirm("reload")} />
-        <Button title="停止引擎" role="destructive" systemImage="stop.circle" action={() => setConfirm("stop")} />
-      </Section>
-
-      {/* 退出（首页 Tab 环境无页面可退，隐藏） */}
       {Script.env === "home_screen" ? null : (
         <Section>
-          <Button title="退出脚本" systemImage="xmark.rectangle" action={() => dismiss()} />
+          <Button action={() => dismiss()}>
+            <ListRow icon="xmark" tone="gray" title="退出脚本" titleColor="label" />
+          </Button>
         </Section>
       )}
     </List>
@@ -379,6 +432,7 @@ function ModulesView() {
 
   return (
     <List
+      {...LIST_STYLE}
       navigationTitle="模块"
       refreshable={async () => { await load() }}
       searchable={{
@@ -479,6 +533,7 @@ function ProfileSectionView({
 
   return (
     <List
+      {...LIST_STYLE}
       navigationTitle={title}
       searchable={{
         value: query,
@@ -518,6 +573,7 @@ function ProfileView() {
 
   return (
     <List
+      {...LIST_STYLE}
       navigationTitle="当前配置"
       tabBarVisibility="visible"
       searchable={{

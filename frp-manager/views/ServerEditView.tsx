@@ -1,13 +1,16 @@
-// 添加 / 编辑服务器条目：名称、类型、地址、用户名；密码按条目 id 存 Keychain
+// 添加 / 编辑服务器条目（sheet）：名称、类型、地址、用户名；密码按条目 id 存 Keychain
 import {
   Button,
+  HStack,
   List,
-  Picker,
+  NavigationStack,
   Section,
   SecureField,
+  Spacer,
   Text,
   TextField,
   useState,
+  VStack,
 } from "scripting"
 import {
   defaultServer,
@@ -16,6 +19,13 @@ import {
   type FrpServerKind,
 } from "../lib/servers"
 import { probeHealthz } from "../lib/frpApi"
+import { BARE_ROW, IconBadge, LIST_STYLE } from "../components/Kit"
+import { cardBackground, roundedShape, TONES, UI, type Tone } from "../lib/theme"
+
+const KINDS: { kind: FrpServerKind; title: string; subtitle: string; icon: string; tone: Tone }[] = [
+  { kind: "frpc", title: "frpc 客户端", subtitle: "admin 端口", icon: "arrow.triangle.branch", tone: "blue" },
+  { kind: "frps", title: "frps 服务端", subtitle: "dashboard 端口", icon: "server.rack", tone: "accent" },
+]
 
 export function ServerEditView({
   initial,
@@ -32,7 +42,7 @@ export function ServerEditView({
   const [username, setUsername] = useState(initial?.username ?? "")
   const [password, setPasswordDraft] = useState("")
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState<string | null>(null)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
 
   function draft(): FrpServer {
     return {
@@ -47,16 +57,18 @@ export function ServerEditView({
   async function test() {
     const d = draft()
     if (!serverIsReady(d)) {
-      setMsg("请先填写地址")
+      setMsg({ text: "请先填写地址", ok: false })
       return
     }
     setBusy(true)
     setMsg(null)
     try {
       const online = await probeHealthz({ baseUrl: d.url, username: "", password: "" })
-      setMsg(online ? "连通正常（/healthz）" : "无法连接：请确认 frp 已运行、地址端口正确")
+      setMsg(online
+        ? { text: "连通正常（/healthz）", ok: true }
+        : { text: "无法连接：请确认 frp 已运行、地址端口正确", ok: false })
     } catch (e) {
-      setMsg(`失败：${e}`)
+      setMsg({ text: `失败：${e}`, ok: false })
     } finally {
       setBusy(false)
     }
@@ -68,73 +80,126 @@ export function ServerEditView({
   }
 
   return (
-    <List
-      navigationTitle={isNew ? "添加服务器" : "编辑服务器"}
-      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-    >
-      <Section>
-        <TextField
-          label={<Text>名称</Text>}
-          value={name}
-          onChanged={setName}
-          prompt="本机 frpc / 云端 frps"
-        />
-        <Picker
-          title="类型"
-          pickerStyle="segmented"
-          value={kind}
-          onChanged={(v: string) => setKind(v as FrpServerKind)}
-        >
-          <Text tag="frpc">frpc 客户端</Text>
-          <Text tag="frps">frps 服务端</Text>
-        </Picker>
-        <TextField
-          label={<Text>地址</Text>}
-          value={url}
-          onChanged={setUrl}
-          prompt={kind === "frpc" ? "http://127.0.0.1:6080" : "http://frps.example.com:7500"}
-        />
-        <TextField
-          label={<Text>用户名</Text>}
-          value={username}
-          onChanged={setUsername}
-          prompt="Basic Auth 用户名（可留空）"
-        />
-        <SecureField
-          label={<Text>密码</Text>}
-          value={password}
-          onChanged={setPasswordDraft}
-          prompt={
-            isNew
-              ? "Basic Auth 密码（可留空）"
-              : "留空则保持已存密码不变"
-          }
-        />
-      </Section>
-      <Section
-        footer={
-          <Text font={13}>
-            {msg
-              ? msg
-              : kind === "frpc"
-                ? "frpc 填 admin 端口（webServer.addr/port）；用户名密码对应 webServer.user/password，都留空表示 frp 不校验。"
-                : "frps 填 dashboard 端口；用户名密码对应 webServer.user/password，都留空表示 frp 不校验。"}
-          </Text>
-        }
+    <NavigationStack>
+      <List
+        {...LIST_STYLE}
+        navigationTitle={isNew ? "添加服务器" : "编辑服务器"}
+        navigationBarTitleDisplayMode="inline"
+        toolbar={{
+          cancellationAction: <Button title="取消" action={() => onDone(null, "")} />,
+          confirmationAction: <Button title="保存" fontWeight="semibold" disabled={!url.trim()} action={save} />,
+        }}
       >
-        <Button
-          title={busy ? "测试中…" : "测试连通"}
-          systemImage="antenna.radiowaves.left.and.right"
-          disabled={busy}
-          action={() => { void test() }}
-        />
-        <Button title="保存" systemImage="checkmark.circle" action={save} />
-      </Section>
-      {isNew ? null : (
         <Section>
-          <Button title="返回列表" action={() => onDone(null, "")} />
+          <HStack {...BARE_ROW} spacing={10}>
+            {KINDS.map((k) => (
+              <KindTile
+                key={k.kind}
+                {...k}
+                selected={kind === k.kind}
+                onTap={() => {
+                  setKind(k.kind)
+                  setMsg(null)
+                }}
+              />
+            ))}
+          </HStack>
         </Section>
-      )}
-    </List>
+        <Section header={<Text>连接</Text>}>
+          <TextField
+            label={<Text>名称</Text>}
+            value={name}
+            onChanged={setName}
+            prompt="本机 frpc / 云端 frps"
+          />
+          <TextField
+            label={<Text>地址</Text>}
+            value={url}
+            onChanged={(v: string) => {
+              setUrl(v)
+              setMsg(null)
+            }}
+            prompt={kind === "frpc" ? "http://127.0.0.1:6080" : "http://frps.example.com:7500"}
+          />
+        </Section>
+        <Section
+          header={<Text>认证</Text>}
+          footer={
+            <Text font={13}>
+              {kind === "frpc"
+                ? "对应 frpc 的 webServer.user / password，都留空表示 frp 不校验。"
+                : "对应 frps 的 webServer.user / password，都留空表示 frp 不校验。"}
+            </Text>
+          }
+        >
+          <TextField
+            label={<Text>用户名</Text>}
+            value={username}
+            onChanged={setUsername}
+            prompt="Basic Auth 用户名（可留空）"
+          />
+          <SecureField
+            label={<Text>密码</Text>}
+            value={password}
+            onChanged={setPasswordDraft}
+            prompt={isNew ? "Basic Auth 密码（可留空）" : "留空则保持已存密码不变"}
+          />
+        </Section>
+        <Section>
+          <HStack spacing={12}>
+            <IconBadge
+              icon={msg ? (msg.ok ? "checkmark.seal.fill" : "xmark.octagon.fill") : "antenna.radiowaves.left.and.right"}
+              tone={msg ? (msg.ok ? "green" : "red") : "gray"}
+              size={32}
+            />
+            <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+              <Text font={15} fontWeight="semibold">{busy ? "测试中…" : "测试连通"}</Text>
+              <Text font={12} foregroundStyle={msg && !msg.ok ? TONES.red.fg : "secondaryLabel"}>
+                {msg?.text ?? "探测 /healthz，不需要认证"}
+              </Text>
+            </VStack>
+            <Button title="测试" buttonStyle="bordered" disabled={busy} action={() => { void test() }} />
+          </HStack>
+        </Section>
+      </List>
+    </NavigationStack>
+  )
+}
+
+function KindTile({
+  title,
+  subtitle,
+  icon,
+  tone,
+  selected,
+  onTap,
+}: {
+  title: string
+  subtitle: string
+  icon: string
+  tone: Tone
+  selected: boolean
+  onTap: () => void
+}) {
+  return (
+    <VStack
+      alignment="leading"
+      spacing={8}
+      padding={14}
+      frame={{ maxWidth: "infinity", alignment: "leading" }}
+      background={cardBackground(UI.tileRadius, selected ? TONES[tone].soft : UI.cardBg)}
+      contentShape={roundedShape(UI.tileRadius)}
+      onTapGesture={onTap}
+    >
+      <HStack>
+        <IconBadge icon={icon} tone={tone} size={30} filled={selected} />
+        <Spacer />
+        {selected ? <IconBadge icon="checkmark" tone={tone} size={20} /> : null}
+      </HStack>
+      <VStack alignment="leading" spacing={1}>
+        <Text font={15} fontWeight="semibold">{title}</Text>
+        <Text font={11} foregroundStyle="secondaryLabel">{subtitle}</Text>
+      </VStack>
+    </VStack>
   )
 }
