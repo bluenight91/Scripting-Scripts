@@ -568,7 +568,7 @@ export const flushDns = (c: SurgeConfig) => post<void>(c, "/v1/dns/flush")
 export const testDnsDelay = (c: SurgeConfig, domain: string) =>
   post<{ delay: number }>(c, "/v1/test/dns_delay", { domain })
 
-/** 商店版没有 /metrics 时，用 traffic / requests / dns 拼出总览可用的 gauge */
+/** 商店版没有 /metrics 时，用 traffic / requests / dns 拼出仪表盘可用的 gauge */
 async function fallbackOverviewSamples(
   c: SurgeConfig,
   traffic?: TrafficSnapshot | null

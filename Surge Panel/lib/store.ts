@@ -44,7 +44,7 @@ export type Prefs = {
   autoRefresh: boolean
   intervalSec: 3 | 5 | 10
   maxPoints: 180 | 360 | 720
-  /** 总览隐藏实例地址与本机 IP，方便截图分享 */
+  /** 仪表盘隐藏实例地址与本机 IP，方便截图分享 */
   hideAddresses: boolean
   /** 内存诊断查看范围（分钟） */
   memRangeMin: MemRangeMin
@@ -76,7 +76,7 @@ export type StoreState = {
   memLong: MemoryPoint[]
   speedHistory: SpeedPoint[]
   traffic: TrafficSnapshot | null
-  /** null=未知；true=有 /metrics；false=商店版等无该端点，总览走 HTTP API 回退 */
+  /** null=未知；true=有 /metrics；false=商店版等无该端点，仪表盘走 HTTP API 回退 */
   metricsAvailable: boolean | null
   routingSegment: RoutingSegment
   activitySegment: ActivitySegment
