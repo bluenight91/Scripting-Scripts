@@ -20,6 +20,7 @@ import { startPolling, stopPolling, registerTabJump, setVisibleTab, TAB_ORDER, t
 import { TONES } from "./lib/ui"
 import { useMarkdownReleaseNotesSheet } from "./components/ReleaseNotesSheet"
 import { ConnectionPill } from "./components/ConnectionStatus"
+import { PAGE_BG } from "./components/Kit"
 import { DashboardView } from "./views/DashboardView"
 import { RoutingView } from "./views/RoutingView"
 import { ActivityView } from "./views/ActivityView"
@@ -82,6 +83,7 @@ export function SurgePanelApp() {
           tabBarVisibility="visible"
           ignoresSafeArea={{ regions: "container", edges: "bottom" }}
           scrollEdgeEffectHidden="bottom"
+          background={PAGE_BG}
           sheet={releaseNotes}
         >
           <HStack spacing={10} padding={{ horizontal: 16, top: 8, bottom: 6 }}>

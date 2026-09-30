@@ -11,11 +11,11 @@ import {
   type Color,
 } from "scripting"
 import { GradientBar } from "../components/GradientBar"
-import { Card, IconBadge, MetricTile, SectionHeader, EmptyState } from "../components/Kit"
+import { Card, EmptyState, IconBadge, MetricTile, PAGE_BG, SectionHeader } from "../components/Kit"
 import { ActivityChips } from "../components/SegmentChips"
 import { refreshNow, useStore } from "../lib/store"
 import { formatBytes, formatSpeed, formatSpeedParts, ifaceDisplayName, isDirectPolicy } from "../lib/metrics"
-import { DOWN_TONE, PAGE_BACKDROP, TONES, UI, UP_TONE } from "../lib/ui"
+import { DOWN_TONE, TONES, UI, UP_TONE } from "../lib/ui"
 import type { TrafficEntry } from "../lib/surgeApi"
 
 const BAR_COLORS: [Color, Color][] = [
@@ -99,7 +99,7 @@ export function TrafficView() {
   const proxyPct = splitTotal > 0 ? 100 - directPct : 0
 
   return (
-    <ScrollView axes="vertical" refreshable={async () => { await refreshNow() }} background={PAGE_BACKDROP}>
+    <ScrollView axes="vertical" refreshable={async () => { await refreshNow() }} background={PAGE_BG}>
       <VStack alignment="leading" spacing={UI.pageSpacing} padding={{ horizontal: UI.pagePadding, top: 8, bottom: 28 }}>
         <ActivityChips />
 
