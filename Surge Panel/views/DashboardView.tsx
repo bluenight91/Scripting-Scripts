@@ -15,7 +15,7 @@ import {
   useState,
   VStack,
 } from "scripting"
-import { Card, HeroCard, IconBadge, MetricTile, SectionHeader, ValueText } from "../components/Kit"
+import { Card, HeroCard, IconBadge, MetricTile, PAGE_BG, SectionHeader, ValueText } from "../components/Kit"
 import { ConnectionPill } from "../components/ConnectionStatus"
 import { activeInstance, getState, needsSetup, openActivity, refreshNow, savePrefs, useStore } from "../lib/store"
 import {
@@ -45,7 +45,7 @@ import {
   gaugeValue,
   parsePrimaryAddresses,
 } from "../lib/metrics"
-import { cardBackground, connectErrorText, IS_GLASS, METRICS_HINT, PAGE_BACKDROP, roundedShape, TONES, UI, type Tone } from "../lib/ui"
+import { cardBackground, connectErrorText, IS_GLASS, METRICS_HINT, roundedShape, TONES, UI, type Tone } from "../lib/ui"
 import { MemoryDiagView } from "./MemoryDiagView"
 
 /** bytes/s → KB/s，一位小数 */
@@ -237,7 +237,7 @@ export function DashboardView() {
     <ScrollView
       axes="vertical"
       refreshable={reload}
-      background={PAGE_BACKDROP}
+      background={PAGE_BG}
       sheet={{
         isPresented: showDiag || showInst,
         onChanged: (v: boolean) => {
