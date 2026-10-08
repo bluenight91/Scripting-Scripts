@@ -34,17 +34,19 @@ export function UnsupportedApiNotice({
 
   const status = error instanceof SurgeApiError ? error.status : undefined
   const body = error instanceof SurgeApiError ? error.body : undefined
+  const unknownPath = /unknown path/i.test(body ?? "")
+  const hint = unknownPath
+    ? "Surge 明确回复 unknown path：正在运行的这个构建还没有该接口，重启引擎也不会改变结果。Surge Mac 6.10 已提供；iOS 需等后续 TestFlight 构建。面板会在接口出现后自动可用，期间可切到 Mac 实例使用。"
+    : "面板不比较版本号，只看 Surge 是否提供该接口。若 Surge 刚更新，请在 Surge 中断开再重新连接以重启引擎，然后重试；也请确认当前实例连的就是这台已更新的设备。"
 
   return (
     <>
       <VStack alignment="leading" spacing={6} padding={{ vertical: 6 }}>
         <HStack spacing={8}>
           <Image systemName="questionmark.app.dashed" font={18} foregroundStyle={TONES.orange.fg} />
-          <Text font={16} fontWeight="semibold">{`Surge 没有响应${feature}接口`}</Text>
+          <Text font={16} fontWeight="semibold">{unknownPath ? `当前 Surge 构建尚未提供${feature}接口` : `Surge 没有响应${feature}接口`}</Text>
         </HStack>
-        <Text font={13} foregroundStyle="secondaryLabel">
-          {"面板不比较版本号，只看 Surge 是否提供该接口。若 Surge 已更新到 TestFlight 5.102（即 5.23 RC），请在 Surge 中断开再重新连接以重启引擎，然后重试；也请确认当前实例连的就是这台已更新的设备。"}
-        </Text>
+        <Text font={13} foregroundStyle="secondaryLabel">{hint}</Text>
       </VStack>
       <InfoRow label="请求" value={endpoint} mono />
       <InfoRow label="返回" value={status ? `HTTP ${status}` : "端点不可用"} mono />
