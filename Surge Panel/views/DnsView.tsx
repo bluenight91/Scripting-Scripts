@@ -15,6 +15,7 @@ import {
   flushDns,
   getDns,
   lookupGeoIp,
+  resetGeoIpSupport,
   surgeApiErrorKind,
   surgeApiErrorMessage,
   testDnsDelay,
@@ -24,6 +25,7 @@ import {
 } from "../lib/surgeApi"
 import { formatRequestDateTime, isIpAddress, isPublicIp, surgeTimestampToMs } from "../lib/metrics"
 import { GeoIpInline, GeoIpRows, geoDbDatesText } from "../components/GeoIp"
+import { UnsupportedApiNotice } from "../components/ApiUnsupported"
 import { useStoreSelector } from "../lib/store"
 import { useTabAutoRefresh } from "../lib/liveCache"
 import { connectErrorText, TONES } from "../lib/ui"
@@ -46,6 +48,7 @@ export function DnsView() {
   const [geoBusy, setGeoBusy] = useState(false)
   const [geoResult, setGeoResult] = useState<GeoIpResult | null>(null)
   const [geoError, setGeoError] = useState<string | null>(null)
+  const [geoUnsupported, setGeoUnsupported] = useState<unknown>(null)
 
   async function runGeoLookup() {
     const ip = geoInput.trim().replace(/^\[|\]$/g, "")
@@ -57,15 +60,14 @@ export function DnsView() {
     }
     setGeoBusy(true)
     setGeoError(null)
+    setGeoUnsupported(null)
     try {
       setGeoResult(await lookupGeoIp(config, ip))
+      resetGeoIpSupport(config)
     } catch (e) {
       setGeoResult(null)
-      setGeoError(
-        surgeApiErrorKind(e) === "unsupported"
-          ? `IP 归属查询需要 ${API_523_MIN_VERSION}`
-          : `查询失败：${surgeApiErrorMessage(e)}`
-      )
+      if (surgeApiErrorKind(e) === "unsupported") setGeoUnsupported(e)
+      else setGeoError(`查询失败：${surgeApiErrorMessage(e)}`)
     } finally {
       setGeoBusy(false)
     }
@@ -164,7 +166,7 @@ export function DnsView() {
           ) : geoResult ? (
             <Text font={12}>{geoDbDatesText(geoResult) ?? "使用 Surge 内置 GeoIP / ASN 数据库"}</Text>
           ) : (
-            <Text font={12}>{`与 GEOIP、IP-ASN 规则使用同一数据库。需要 ${API_523_MIN_VERSION}。`}</Text>
+            <Text font={12}>{`与 GEOIP、IP-ASN 规则使用同一数据库（${API_523_MIN_VERSION}）。`}</Text>
           )
         }
       >
@@ -178,6 +180,13 @@ export function DnsView() {
             <InfoRow label="地址" value={geoResult.address} mono />
             <GeoIpRows result={geoResult} />
           </>
+        ) : geoUnsupported ? (
+          <UnsupportedApiNotice
+            feature="IP 归属"
+            endpoint={`GET /v1/geoip?ip=${geoInput.trim()}`}
+            error={geoUnsupported}
+            onRetry={runGeoLookup}
+          />
         ) : null}
       </Section>
       {error ? (

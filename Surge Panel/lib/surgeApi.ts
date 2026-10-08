@@ -1,7 +1,7 @@
 // Surge HTTP API 封装（端点文档：https://manual.nssurge.com/others/http-api.html）
 import { fetch } from "scripting"
 import { hostForUrl } from "./connection"
-import { parsePrometheus, uptimeSecondsFromStartTime, type MetricSample } from "./metrics"
+import { parseEngineInfo, parsePrometheus, uptimeSecondsFromStartTime, type MetricSample } from "./metrics"
 
 export type SurgeConfig = {
   protocol: "http" | "https"
@@ -32,12 +32,15 @@ export type SurgeApiErrorKind =
 export class SurgeApiError extends Error {
   kind: SurgeApiErrorKind
   status?: number
+  /** 非 2xx 响应体前 300 字，便于排查端点不存在 / 参数错误 */
+  body?: string
 
-  constructor(kind: SurgeApiErrorKind, message: string, status?: number) {
+  constructor(kind: SurgeApiErrorKind, message: string, status?: number, body?: string) {
     super(message)
     this.name = "SurgeApiError"
     this.kind = kind
     this.status = status
+    this.body = body
   }
 }
 
@@ -89,19 +92,14 @@ function wrapFetchError(e: unknown): SurgeApiError {
 }
 
 /** 400 时 Surge 会在 body 里说明原因（未知资源 key、非法 IP 等） */
-async function badRequestDetail(res: { text(): Promise<string> }): Promise<string | null> {
+function badRequestDetail(text: string): string | null {
+  if (!text) return null
   try {
-    const text = (await res.text()).trim()
-    if (!text) return null
-    try {
-      const body = JSON.parse(text) as { error?: unknown; message?: unknown }
-      const msg = body?.error ?? body?.message
-      if (typeof msg === "string" && msg) return msg
-    } catch {}
-    return text.length <= 200 ? text : null
-  } catch {
-    return null
-  }
+    const body = JSON.parse(text) as { error?: unknown; message?: unknown }
+    const msg = body?.error ?? body?.message
+    if (typeof msg === "string" && msg) return msg
+  } catch {}
+  return text.length <= 200 ? text : null
 }
 
 export function urlOf(c: SurgeConfig, path: string): string {
@@ -131,11 +129,14 @@ async function request<T>(
     throw wrapFetchError(e)
   })
   if (!res.ok) {
+    const body = await res.text().then((t: string) => t.trim().slice(0, 300)).catch(() => "")
     if (res.status === 400) {
-      const detail = await badRequestDetail(res)
-      if (detail) throw new SurgeApiError("http", detail, 400)
+      const detail = badRequestDetail(body)
+      if (detail) throw new SurgeApiError("http", detail, 400, body)
     }
-    throw httpStatusError(res.status)
+    const err = httpStatusError(res.status)
+    err.body = body || undefined
+    throw err
   }
   const text = await res.text()
   if (!text || text === "OK") return undefined as T
@@ -589,8 +590,18 @@ export const flushDns = (c: SurgeConfig) => post<void>(c, "/v1/dns/flush")
 export const testDnsDelay = (c: SurgeConfig, domain: string) =>
   post<{ delay: number }>(c, "/v1/test/dns_delay", { domain })
 
-/** 外部资源与 GeoIP 端点的最低版本；更早版本返回 404 */
-export const API_523_MIN_VERSION = "Surge iOS 5.23+ / Mac 6.10+"
+/** 官方文档标注的版本；TestFlight 的 5.102.x 构建即 5.23 RC，面板只看端点是否响应，不比较版本号 */
+export const API_523_MIN_VERSION = "Surge iOS 5.23 / Mac 6.10（含 TestFlight 5.102）"
+
+export type EngineInfo = { version?: string; build?: string; system?: string }
+
+/** 正在响应 HTTP API 的 Surge 引擎版本：优先响应头，其次 $environment（需脚本功能开启） */
+export async function getEngineInfo(c: SurgeConfig): Promise<EngineInfo> {
+  const probe = await probeOutbound(c).catch(() => null)
+  if (probe?.version || probe?.build) return { version: probe.version, build: probe.build }
+  const raw = await evaluateScript(c, "$done($environment)", "generic", 3).catch(() => null)
+  return parseEngineInfo(raw)
+}
 
 // ---------- 外部资源 ----------
 
@@ -635,17 +646,23 @@ export type GeoIpResult = {
 export const lookupGeoIp = (c: SurgeConfig, ip: string) =>
   get<GeoIpResult>(c, `/v1/geoip?ip=${encodeURIComponent(ip)}`)
 
-// 连接详情会反复打开同一远端，查询结果与「不支持」都按实例缓存在内存里
+// 连接详情会反复打开同一远端，查询结果按实例缓存；「不支持」只记 1 分钟，重启 / 升级引擎后能自动恢复
 const geoIpCache = new Map<string, GeoIpResult>()
-const geoIpUnsupported = new Set<string>()
+const geoIpUnsupportedAt = new Map<string, number>()
+const UNSUPPORTED_TTL_MS = 60_000
 
 export function isGeoIpUnsupported(c: SurgeConfig): boolean {
-  return geoIpUnsupported.has(configCacheKey(c))
+  const at = geoIpUnsupportedAt.get(configCacheKey(c))
+  return at !== undefined && Date.now() - at < UNSUPPORTED_TTL_MS
+}
+
+export function resetGeoIpSupport(c: SurgeConfig) {
+  geoIpUnsupportedAt.delete(configCacheKey(c))
 }
 
 export async function lookupGeoIpCached(c: SurgeConfig, ip: string): Promise<GeoIpResult | null> {
   const scope = configCacheKey(c)
-  if (geoIpUnsupported.has(scope)) return null
+  if (isGeoIpUnsupported(c)) return null
   const key = `${scope}|${ip}`
   const hit = geoIpCache.get(key)
   if (hit) return hit
@@ -656,7 +673,7 @@ export async function lookupGeoIpCached(c: SurgeConfig, ip: string): Promise<Geo
     return r
   } catch (e) {
     if (surgeApiErrorKind(e) === "unsupported") {
-      geoIpUnsupported.add(scope)
+      geoIpUnsupportedAt.set(scope, Date.now())
       return null
     }
     throw e
