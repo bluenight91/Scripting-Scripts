@@ -3,10 +3,13 @@ import {
   AreaChart,
   Button,
   Chart,
+  Divider,
   gradient,
   HStack,
   Image,
   LineChart,
+  Menu,
+  NavigationStack,
   Script,
   ScrollView,
   Spacer,
@@ -17,7 +20,7 @@ import {
 } from "scripting"
 import { Card, HeroCard, IconBadge, MetricTile, PAGE_BG, SectionHeader, ValueText } from "../components/Kit"
 import { ConnectionPill } from "../components/ConnectionStatus"
-import { activeInstance, getState, needsSetup, openActivity, refreshNow, savePrefs, useStore } from "../lib/store"
+import { activeInstance, getState, needsSetup, openActivity, refreshNow, savePrefs, switchInstance, useStore } from "../lib/store"
 import {
   evaluateScript,
   getDns,
@@ -249,7 +252,12 @@ export function DashboardView() {
         content: showDiag ? (
           <MemoryDiagView />
         ) : (
-          <InstancesView startAdding={setup && state.instances.length === 0} />
+          <NavigationStack>
+            <InstancesView
+              startAdding={setup && state.instances.length === 0}
+              onClose={() => setShowInst(false)}
+            />
+          </NavigationStack>
         ),
       }}
     >
@@ -257,12 +265,25 @@ export function DashboardView() {
         {/* 实例头：名称可切换，地址行可隐藏 */}
         <HStack alignment="top" spacing={10}>
           <VStack alignment="leading" spacing={6}>
-            <HStack spacing={6} onTapGesture={() => setShowInst(true)} contentShape="rect">
-              <Text font={isHome ? 26 : 32} fontWeight="bold" fontDesign="rounded" lineLimit={1} minScaleFactor={0.6}>
-                {inst.name}
-              </Text>
-              <Image systemName="chevron.down.circle.fill" font={17} symbolRenderingMode="hierarchical" foregroundStyle="secondaryLabel" />
-            </HStack>
+            {setup || state.instances.length === 0 ? (
+              <Button buttonStyle="plain" action={() => setShowInst(true)}>
+                <InstanceTitle name={inst.name} isHome={isHome} />
+              </Button>
+            ) : (
+              // 原生菜单直接切换：首页 Tab 里不弹 sheet，也不和翻页手势抢点击
+              <Menu label={<InstanceTitle name={inst.name} isHome={isHome} />}>
+                {state.instances.map((i) => (
+                  <Button
+                    key={i.id}
+                    title={i.name}
+                    systemImage={i.id === state.activeId ? "checkmark" : "server.rack"}
+                    action={() => { void switchInstance(i.id) }}
+                  />
+                ))}
+                <Divider />
+                <Button title="管理实例…" systemImage="slider.horizontal.3" action={() => setShowInst(true)} />
+              </Menu>
+            )}
             <HStack
               spacing={6}
               onTapGesture={setup ? undefined : () => savePrefs({ ...state.prefs, hideAddresses: !hideAddresses })}
@@ -478,6 +499,18 @@ export function DashboardView() {
         ) : null}
       </VStack>
     </ScrollView>
+  )
+}
+
+/** 实例名 + 下拉箭头；整块（含行高）都可点按 */
+function InstanceTitle({ name, isHome }: { name: string; isHome: boolean }) {
+  return (
+    <HStack spacing={6} padding={{ vertical: 4 }} frame={{ minHeight: 44 }} contentShape="rect">
+      <Text font={isHome ? 26 : 32} fontWeight="bold" fontDesign="rounded" foregroundStyle="label" lineLimit={1} minScaleFactor={0.6}>
+        {name}
+      </Text>
+      <Image systemName="chevron.down.circle.fill" font={17} symbolRenderingMode="hierarchical" foregroundStyle="secondaryLabel" />
+    </HStack>
   )
 }
 

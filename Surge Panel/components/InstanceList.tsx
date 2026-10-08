@@ -37,9 +37,12 @@ function instanceHealth(inst: SurgeInstance): { text: string; failed: boolean } 
 export function InstanceList({
   onAdd,
   onEdit,
+  onClose,
 }: {
   onAdd?: () => void
   onEdit?: (inst: SurgeInstance) => void
+  /** 以 sheet 呈现时提供「完成」按钮 */
+  onClose?: () => void
 }) {
   const credentialWarning = getCredentialWarning()
   const { instances, activeId } = useStoreSelector((s) => ({
@@ -48,7 +51,12 @@ export function InstanceList({
   }))
 
   return (
-    <List {...LIST_STYLE} navigationTitle="实例">
+    <List
+      {...LIST_STYLE}
+      navigationTitle="实例"
+      navigationBarTitleDisplayMode="inline"
+      toolbar={onClose ? { confirmationAction: <Button title="完成" action={onClose} /> } : undefined}
+    >
       <Section
         header={<Text>{instances.length > 0 ? `${instances.length} 个实例` : "实例"}</Text>}
         footer={<Text font={13}>一次只连接一个 Surge HTTP API。点按切换，不会重新打开面板。</Text>}
