@@ -501,6 +501,32 @@ export function parsePrimaryAddresses(raw: unknown): { ipv4?: string; ipv6?: str
   return { ipv4, ipv6 }
 }
 
+/** /v1/scripting/evaluate 执行 `$done($environment)` 的返回 → Surge 版本 / 构建号 */
+export function parseEngineInfo(raw: unknown): { version?: string; build?: string; system?: string } {
+  const unwrap = (v: unknown, depth = 0): Record<string, unknown> | null => {
+    if (depth > 3 || v == null) return null
+    if (typeof v === "string") {
+      try {
+        return unwrap(JSON.parse(v), depth + 1)
+      } catch {
+        return null
+      }
+    }
+    if (typeof v !== "object" || Array.isArray(v)) return null
+    const o = v as Record<string, unknown>
+    if ("surge-version" in o || "surge-build" in o) return o
+    for (const k of ["result", "output", "value", "data"]) {
+      const inner = unwrap(o[k], depth + 1)
+      if (inner) return inner
+    }
+    return null
+  }
+  const env = unwrap(raw)
+  if (!env) return {}
+  const str = (v: unknown) => (v == null || v === "" ? undefined : String(v))
+  return { version: str(env["surge-version"]), build: str(env["surge-build"]), system: str(env.system) }
+}
+
 export type MemoryPoint = { t: number; mem: number }
 
 const RECENT_MEM_MS = 20 * 60 * 1000

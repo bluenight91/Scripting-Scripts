@@ -295,7 +295,7 @@ export function SettingsView() {
         </Picker>
       </Section>
 
-      <Section header={<Text>功能</Text>} footer={<Text font={13}>开关立即写入当前实例。模块页支持搜索；外部资源需 Surge iOS 5.23+ / Mac 6.10+。</Text>}>
+      <Section header={<Text>功能</Text>} footer={<Text font={13}>开关立即写入当前实例。模块页支持搜索；外部资源使用 Surge 5.23（TestFlight 5.102）新增的接口。</Text>}>
         {features === null ? (
           <Text font={14} foregroundStyle="secondaryLabel">
             {setup ? "连接实例后可切换功能" : engineError ? "功能开关不可用" : "加载功能开关…"}
