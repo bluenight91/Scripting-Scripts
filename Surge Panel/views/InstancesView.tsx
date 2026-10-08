@@ -54,7 +54,7 @@ function securityNote(protocol: "http" | "https", host: string): string {
     : "局域网 HTTP 为明文传输，只应在可信网络中使用。"
 }
 
-export function InstancesView({ startAdding = false }: { startAdding?: boolean }) {
+export function InstancesView({ startAdding = false, onClose }: { startAdding?: boolean; onClose?: () => void }) {
   const [editing, setEditing] = useState<SurgeInstance | null>(null)
   const [adding, setAdding] = useState(startAdding)
 
@@ -80,6 +80,7 @@ export function InstancesView({ startAdding = false }: { startAdding?: boolean }
     <InstanceList
       onAdd={() => setAdding(true)}
       onEdit={(inst) => setEditing(inst)}
+      onClose={onClose}
     />
   )
 }
@@ -262,6 +263,7 @@ export function InstanceEditor({
     <List
       {...LIST_STYLE}
       navigationTitle={isNew ? "添加实例" : "编辑实例"}
+      navigationBarTitleDisplayMode="inline"
       confirmationDialog={{
         isPresented: pendingAction !== null,
         onChanged: (shown: boolean) => {
