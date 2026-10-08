@@ -7,8 +7,8 @@
 - **多实例**：本机 / 网关等多个 HTTP API；仪表盘点实例名切换；设置里添加、编辑、测试连通、删除。一次只连接一个实例。
 - **仪表盘**：连接状态、实时上下行主卡片（近 1 分钟速率图，1 秒采样，对齐 [YASD](https://github.com/geekdada/yasd)），MitM·捕获·重写·脚本快捷开关，内存 / 运行时长 / 活动连接 / DNS 指标块（点按直达详情），内存趋势，最新事件
 - **分流**：策略组 | 规则。策略组按配置 `[Proxy Group]` 顺序；搜索；点按切换；延迟彩色胶囊；自动组测速与「最优」标记；嵌套组可再进入。规则可搜索并按类型着色
-- **活动**：流量 | 连接 | DNS | 事件。流量含实时合计、分流占比、网卡 / 节点明细与排行；连接可在活动连接与最近请求间切换，可搜索排序、终止连接；DNS 含静态 Host 与动态缓存、刷新与延迟测试
-- **设置**：实例卡片与连接状态；引擎（出站模式、全局策略、日志级别）；功能（功能开关、模块、脚本、当前配置）；面板（刷新间隔、历史长度、隐藏地址）；更新说明；重载配置 / 清空历史 / 停止引擎
+- **活动**：流量 | 连接 | DNS | 事件。流量含实时合计、分流占比、网卡 / 节点明细与排行；连接可在活动连接与最近请求间切换，可搜索排序、终止连接，详情显示远端 IP 的国家 / ASN / 组织；DNS 含静态 Host 与动态缓存、刷新与延迟测试、IP 归属查询
+- **设置**：实例卡片与连接状态；引擎（出站模式、全局策略、日志级别）；功能（功能开关、模块、外部资源、脚本、当前配置）；面板（刷新间隔、历史长度、隐藏地址）；更新说明；重载配置 / 清空历史 / 停止引擎
 
 ## 使用
 
@@ -54,6 +54,8 @@ Scripting 的 `allowInsecureRequest` 只负责允许明文 HTTP，并不能跳�
 
 `/metrics` 仅 iOS 5.22+ / Mac 6.9+；商店版与 Mac 6.8 仍可用流量、策略和请求，只是没有内存与封禁指标。
 
+外部资源（`/v1/external_resources`）与 IP 归属（`/v1/geoip`）需 iOS 5.23+ / Mac 6.10+。旧版本中外部资源页会提示升级，连接与 DNS 详情不显示归属，其它功能不受影响。
+
 ## 远程访问与安全
 
 - Surge Panel 是 HTTP API 客户端，不是 External Controller。按 Surge 官方[远程管理指南](https://kb.nssurge.com/surge-knowledge-base/zh/guidelines/remote-management)，HTTP API 不具备 External Controller 的 Ponte、USB 与完整管理能力。
@@ -64,7 +66,7 @@ Scripting 的 `allowInsecureRequest` 只负责允许明文 HTTP，并不能跳�
 
 ## 技术要点
 
-- 数据层：`lib/surgeApi.ts` 无状态封装 HTTP API；`lib/instances.ts` 多实例与迁移；`lib/store.ts` 当前实例的 metrics / 1Hz traffic
+- 数据层：`lib/surgeApi.ts` 封装 HTTP API（GeoIP 结果按实例缓存在内存）；`lib/instances.ts` 多实例与迁移；`lib/store.ts` 当前实例的 metrics / 1Hz traffic
 - 实时速率：`/v1/traffic` 1Hz、内存 60 点；折线 `monotone`、Y 轴从 0
 - 首页：顶部分段 + 翻页；Scripting 浮层底栏可见，内容铺到屏幕底
 - 不做：External Controller / Ponte / USB、Mac 设备管理、Surge 配置档切换、系统代理 / Enhanced Mode、MITM CA 下载
