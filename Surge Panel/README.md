@@ -54,7 +54,7 @@ Scripting 的 `allowInsecureRequest` 只负责允许明文 HTTP，并不能跳�
 
 `/metrics` 仅 iOS 5.22+ / Mac 6.9+；商店版与 Mac 6.8 仍可用流量、策略和请求，只是没有内存与封禁指标。
 
-外部资源（`/v1/external_resources`）与 IP 归属（`/v1/geoip`）需 iOS 5.23+ / Mac 6.10+。旧版本中外部资源页会提示升级，连接与 DNS 详情不显示归属，其它功能不受影响。
+外部资源（`/v1/external_resources`）与 IP 归属（`/v1/geoip`）对应 iOS 5.23 / Mac 6.10（TestFlight 5.102 即 5.23 RC）。面板不比较版本号，只看接口是否响应；不可用时外部资源页会显示 HTTP 状态与正在运行的引擎版本，便于确认是否需要重启引擎或连错了设备。连接与 DNS 详情在不可用时不显示归属，其它功能不受影响。
 
 ## 远程访问与安全
 
