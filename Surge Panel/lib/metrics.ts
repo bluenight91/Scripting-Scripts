@@ -277,6 +277,157 @@ export function isFakeIp(addr: string): boolean {
   return false
 }
 
+const IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/
+
+function isIpv6(s: string): boolean {
+  if (!/^[0-9a-f:.]+$/i.test(s) || !s.includes(":") || s.includes(":::")) return false
+  const doubles = s.split("::").length - 1
+  if (doubles > 1) return false
+  const groups = s.split(":").filter((g) => g.length > 0)
+  const tail = groups[groups.length - 1] ?? ""
+  const embedsV4 = tail.includes(".")
+  if (embedsV4 && !IPV4_RE.test(tail)) return false
+  const hexGroups = embedsV4 ? groups.slice(0, -1) : groups
+  if (hexGroups.some((g) => !/^[0-9a-f]{1,4}$/i.test(g))) return false
+  const width = hexGroups.length + (embedsV4 ? 2 : 0)
+  return doubles === 1 ? width < 8 : width === 8
+}
+
+export function isIpAddress(s: string): boolean {
+  const t = s.trim()
+  return IPV4_RE.test(t) || isIpv6(t)
+}
+
+/** 从 "1.2.3.4:443"、"[2001:db8::1]:443"、"1.2.3.4 (Proxy)" 等写法里取出 IP */
+export function extractIpAddress(raw: string | undefined | null): string | null {
+  if (!raw) return null
+  const s = raw.trim()
+  if (isIpAddress(s)) return s
+  const bracket = /^\[([0-9a-f:.]+)\](?::\d+)?/i.exec(s)
+  if (bracket && isIpv6(bracket[1])) return bracket[1]
+  const token = s.split(/[\s(（,]/)[0] ?? ""
+  if (isIpAddress(token)) return token
+  const v4Port = /^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/.exec(token)
+  if (v4Port && IPV4_RE.test(v4Port[1])) return v4Port[1]
+  return null
+}
+
+/** 私有、回环、链路本地、CGNAT、组播与 Fake-IP 查不到归属，不值得发请求 */
+export function isPublicIp(ip: string): boolean {
+  const s = ip.trim().toLowerCase()
+  if (isFakeIp(s)) return false
+  if (IPV4_RE.test(s)) {
+    const [a, b] = s.split(".").map(Number)
+    if (a === 0 || a === 10 || a === 127 || a >= 224) return false
+    if (a === 169 && b === 254) return false
+    if (a === 172 && b >= 16 && b <= 31) return false
+    if (a === 192 && b === 168) return false
+    if (a === 100 && b >= 64 && b <= 127) return false
+    return true
+  }
+  if (!isIpv6(s)) return false
+  if (s === "::" || s === "::1") return false
+  if (/^fe[89ab]/.test(s) || /^f[cd]/.test(s) || s.startsWith("ff")) return false
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(s)
+  if (mapped) return isPublicIp(mapped[1])
+  return true
+}
+
+/** ISO 3166 两位代码 → 旗帜 emoji */
+export function countryFlag(code: string | null | undefined): string {
+  if (!code || !/^[a-z]{2}$/i.test(code)) return ""
+  const base = 0x1f1e6
+  return String.fromCodePoint(...code.toUpperCase().split("").map((ch) => base + ch.charCodeAt(0) - 65))
+}
+
+export function countryName(code: string | null | undefined): string | null {
+  if (!code) return null
+  try {
+    const names = new Intl.DisplayNames(["zh-Hans"], { type: "region" })
+    const n = names.of(code.toUpperCase())
+    return n && n !== code.toUpperCase() ? n : code.toUpperCase()
+  } catch {
+    return code.toUpperCase()
+  }
+}
+
+/** GeoIP 结果的一行摘要：「🇦🇺 澳大利亚 · AS13335 Cloudflare, Inc.」；全空返回 null */
+export function formatGeoSummary(g: {
+  country?: string | null
+  asn?: number | null
+  organization?: string | null
+} | null | undefined): string | null {
+  if (!g) return null
+  const parts: string[] = []
+  if (g.country) parts.push(`${countryFlag(g.country)} ${countryName(g.country)}`.trim())
+  const as = [g.asn != null ? `AS${g.asn}` : "", g.organization ?? ""].filter((x) => x).join(" ")
+  if (as) parts.push(as)
+  return parts.length > 0 ? parts.join(" · ") : null
+}
+
+/** Unix 秒（或毫秒）→「3 分钟前」；0 / 缺失返回 null */
+export function formatAge(ts: number | null | undefined, now = Date.now()): string | null {
+  if (ts == null) return null
+  const ms = surgeTimestampToMs(ts)
+  if (!Number.isFinite(ms)) return null
+  const sec = Math.max(0, Math.round((now - ms) / 1000))
+  if (sec < 60) return "刚刚"
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min} 分钟前`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `${h} 小时前`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `${d} 天前`
+  const mo = Math.floor(d / 30)
+  if (mo < 12) return `${mo} 个月前`
+  return `${Math.floor(d / 365)} 年前`
+}
+
+export function formatDate(ts: number | null | undefined): string | null {
+  if (ts == null) return null
+  const ms = surgeTimestampToMs(ts)
+  if (!Number.isFinite(ms)) return null
+  const d = new Date(ms)
+  const p = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+export type ResourceStatus = "updating" | "error" | "never" | "local" | "ready" | "pending"
+
+/** 外部资源列表行状态：更新中 > 出错 > 从未下载 > 本地 > 就绪 */
+export function resourceStatus(r: {
+  local: boolean
+  ready: boolean
+  updatedAt?: number
+  updating?: boolean
+  error?: string
+}): ResourceStatus {
+  if (r.updating) return "updating"
+  if (r.error) return "error"
+  if (r.local) return r.ready ? "local" : "error"
+  if (!r.updatedAt) return r.ready ? "ready" : "never"
+  return r.ready ? "ready" : "pending"
+}
+
+/** 资源路径的短名：URL 取末段文件名并去掉查询串，本地路径取文件名 */
+export function resourceDisplayName(path: string): string {
+  const s = path.trim()
+  const noQuery = s.split(/[?#]/)[0] ?? s
+  const segs = noQuery.split("/").filter((x) => x.length > 0)
+  const last = segs[segs.length - 1] ?? s
+  if (/^[a-z][a-z0-9+.-]*:$/i.test(last) || segs.length <= 1) return s
+  try {
+    return decodeURIComponent(last)
+  } catch {
+    return last
+  }
+}
+
+export function resourceHost(path: string): string | null {
+  const m = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i.exec(path.trim())
+  return m ? m[1] : null
+}
+
 export function collectRecordAddresses(entries: { data?: unknown }[] | undefined | null): string[] {
   if (!Array.isArray(entries)) return []
   const out: string[] = []

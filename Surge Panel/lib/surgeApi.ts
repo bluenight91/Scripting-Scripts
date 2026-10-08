@@ -88,6 +88,22 @@ function wrapFetchError(e: unknown): SurgeApiError {
   return new SurgeApiError("network", e instanceof Error ? e.message : s)
 }
 
+/** 400 时 Surge 会在 body 里说明原因（未知资源 key、非法 IP 等） */
+async function badRequestDetail(res: { text(): Promise<string> }): Promise<string | null> {
+  try {
+    const text = (await res.text()).trim()
+    if (!text) return null
+    try {
+      const body = JSON.parse(text) as { error?: unknown; message?: unknown }
+      const msg = body?.error ?? body?.message
+      if (typeof msg === "string" && msg) return msg
+    } catch {}
+    return text.length <= 200 ? text : null
+  } catch {
+    return null
+  }
+}
+
 export function urlOf(c: SurgeConfig, path: string): string {
   const port = c.port.trim()
   const portPart = port ? `:${port}` : ""
@@ -98,7 +114,8 @@ async function request<T>(
   c: SurgeConfig,
   method: "GET" | "POST",
   path: string,
-  body?: unknown
+  body?: unknown,
+  timeoutSec = 30
 ): Promise<T> {
   const res = await fetch(urlOf(c, path), {
     method,
@@ -107,13 +124,17 @@ async function request<T>(
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
-    timeout: 30,
+    timeout: timeoutSec,
     allowInsecureRequest: allowInsecure(c),
     debugLabel: `surge-panel ${method} ${path}`,
   }).catch((e) => {
     throw wrapFetchError(e)
   })
   if (!res.ok) {
+    if (res.status === 400) {
+      const detail = await badRequestDetail(res)
+      if (detail) throw new SurgeApiError("http", detail, 400)
+    }
     throw httpStatusError(res.status)
   }
   const text = await res.text()
@@ -128,8 +149,8 @@ async function request<T>(
 function get<T>(c: SurgeConfig, path: string): Promise<T> {
   return request<T>(c, "GET", path)
 }
-function post<T>(c: SurgeConfig, path: string, body?: unknown): Promise<T> {
-  return request<T>(c, "POST", path, body)
+function post<T>(c: SurgeConfig, path: string, body?: unknown, timeoutSec?: number): Promise<T> {
+  return request<T>(c, "POST", path, body, timeoutSec)
 }
 
 // ---------- Metrics ----------
@@ -567,6 +588,80 @@ export const flushDns = (c: SurgeConfig) => post<void>(c, "/v1/dns/flush")
 
 export const testDnsDelay = (c: SurgeConfig, domain: string) =>
   post<{ delay: number }>(c, "/v1/test/dns_delay", { domain })
+
+/** 外部资源与 GeoIP 端点的最低版本；更早版本返回 404 */
+export const API_523_MIN_VERSION = "Surge iOS 5.23+ / Mac 6.10+"
+
+// ---------- 外部资源 ----------
+
+export type ExternalResourceType = "ruleset" | "domainset" | "script" | "policy-group" | "data"
+
+export type ExternalResource = {
+  path: string
+  type: ExternalResourceType | string
+  key: string
+  local: boolean
+  ready: boolean
+  /** Unix 秒；0 表示从未下载成功；本地资源没有此字段 */
+  updatedAt?: number
+  updating?: boolean
+  fromModule?: string | null
+  error?: string
+}
+
+export const getExternalResources = (c: SurgeConfig) =>
+  get<{ defines?: ExternalResource[] }>(c, "/v1/external_resources")
+
+/** key 为 "all" 时更新全部远程资源；返回 key → "success" 或错误信息。Surge 下载完才响应，全部更新给足时间 */
+export const updateExternalResource = (c: SurgeConfig, key: string) =>
+  post<Record<string, string> | undefined>(
+    c,
+    "/v1/external_resources/update",
+    { key },
+    key === "all" ? 180 : 60
+  )
+
+// ---------- GeoIP ----------
+
+export type GeoIpResult = {
+  address: string
+  country: string | null
+  asn: number | null
+  organization: string | null
+  "geoip-db-date": number | null
+  "asn-db-date": number | null
+}
+
+export const lookupGeoIp = (c: SurgeConfig, ip: string) =>
+  get<GeoIpResult>(c, `/v1/geoip?ip=${encodeURIComponent(ip)}`)
+
+// 连接详情会反复打开同一远端，查询结果与「不支持」都按实例缓存在内存里
+const geoIpCache = new Map<string, GeoIpResult>()
+const geoIpUnsupported = new Set<string>()
+
+export function isGeoIpUnsupported(c: SurgeConfig): boolean {
+  return geoIpUnsupported.has(configCacheKey(c))
+}
+
+export async function lookupGeoIpCached(c: SurgeConfig, ip: string): Promise<GeoIpResult | null> {
+  const scope = configCacheKey(c)
+  if (geoIpUnsupported.has(scope)) return null
+  const key = `${scope}|${ip}`
+  const hit = geoIpCache.get(key)
+  if (hit) return hit
+  try {
+    const r = await lookupGeoIp(c, ip)
+    if (geoIpCache.size >= 500) geoIpCache.clear()
+    geoIpCache.set(key, r)
+    return r
+  } catch (e) {
+    if (surgeApiErrorKind(e) === "unsupported") {
+      geoIpUnsupported.add(scope)
+      return null
+    }
+    throw e
+  }
+}
 
 /** 商店版没有 /metrics 时，用 traffic / requests / dns 拼出仪表盘可用的 gauge */
 async function fallbackOverviewSamples(

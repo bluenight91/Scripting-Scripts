@@ -42,6 +42,7 @@ import { ChangelogView } from "../components/ReleaseNotesSheet"
 import { clearHistory, needsSetup, savePrefs, useStoreSelector } from "../lib/store"
 import { ScriptsView } from "./ScriptsView"
 import { InstancesView } from "./InstancesView"
+import { ExternalResourcesView } from "./ExternalResourcesView"
 import { ConnectionPill } from "../components/ConnectionStatus"
 import { IconBadge, LIST_STYLE, ListRow, Tag } from "../components/Kit"
 import type { Tone } from "../lib/ui"
@@ -294,7 +295,7 @@ export function SettingsView() {
         </Picker>
       </Section>
 
-      <Section header={<Text>功能</Text>} footer={<Text font={13}>开关立即写入当前实例。模块页支持搜索。</Text>}>
+      <Section header={<Text>功能</Text>} footer={<Text font={13}>开关立即写入当前实例。模块页支持搜索；外部资源需 Surge iOS 5.23+ / Mac 6.10+。</Text>}>
         {features === null ? (
           <Text font={14} foregroundStyle="secondaryLabel">
             {setup ? "连接实例后可切换功能" : engineError ? "功能开关不可用" : "加载功能开关…"}
@@ -309,6 +310,11 @@ export function SettingsView() {
         {setup ? null : (
           <NavigationLink destination={<ModulesView />}>
             <ListRow icon="puzzlepiece.extension.fill" tone="teal" title="模块" />
+          </NavigationLink>
+        )}
+        {setup ? null : (
+          <NavigationLink destination={<ExternalResourcesView />}>
+            <ListRow icon="arrow.down.doc.fill" tone="blue" title="外部资源" subtitle="规则集 / 脚本 / 策略组列表的下载状态与更新" />
           </NavigationLink>
         )}
         <NavigationLink destination={<ScriptsView />}>
