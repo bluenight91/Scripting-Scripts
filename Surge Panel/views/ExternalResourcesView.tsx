@@ -30,6 +30,7 @@ import {
 } from "../lib/metrics"
 import { needsSetup, useStoreSelector } from "../lib/store"
 import { TONES, type Tone } from "../lib/ui"
+import { UnsupportedApiNotice } from "../components/ApiUnsupported"
 import { BARE_ROW, ChipBar, EmptyState, IconBadge, InfoRow, LIST_STYLE, ListRow, Tag, type ChipItem } from "../components/Kit"
 
 type TypeMeta = { label: string; icon: string; tone: Tone }
@@ -110,7 +111,7 @@ export function ExternalResourcesView() {
   const config = useStoreSelector((s) => s.config)
   const [list, setList] = useState<ExternalResource[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [unsupported, setUnsupported] = useState(false)
+  const [unsupported, setUnsupported] = useState<unknown>(null)
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState("all")
   const [busyKeys, setBusyKeys] = useState<string[]>([])
@@ -127,11 +128,12 @@ export function ExternalResourcesView() {
       const r = await getExternalResources(config)
       setList(normalize(r?.defines))
       setError(null)
-      setUnsupported(false)
+      setUnsupported(null)
     } catch (e) {
       if (surgeApiErrorKind(e) === "unsupported") {
-        setUnsupported(true)
+        setUnsupported(e)
         setList([])
+        setError(null)
       } else {
         setError(surgeApiErrorMessage(e))
       }
@@ -218,11 +220,12 @@ export function ExternalResourcesView() {
       ) : null}
 
       {unsupported ? (
-        <Section>
-          <EmptyState
-            icon="arrow.down.doc"
-            title="当前 Surge 不支持外部资源 API"
-            message={`需要 ${API_523_MIN_VERSION}。升级后下拉刷新即可。`}
+        <Section footer={<Text font={12}>{`官方文档标注：${API_523_MIN_VERSION}。`}</Text>}>
+          <UnsupportedApiNotice
+            feature="外部资源"
+            endpoint="GET /v1/external_resources"
+            error={unsupported}
+            onRetry={() => { void load() }}
           />
         </Section>
       ) : list === null ? (
