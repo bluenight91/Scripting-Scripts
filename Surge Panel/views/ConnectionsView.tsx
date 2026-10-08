@@ -15,12 +15,21 @@ import {
   VStack,
 } from "scripting"
 import { getActiveRequests, getRecentRequests, killRequest, type SurgeRequest } from "../lib/surgeApi"
-import { formatBytes, formatRequestClock, formatRequestDateTime, formatSpeed, isRejectPolicy } from "../lib/metrics"
+import {
+  extractIpAddress,
+  formatBytes,
+  formatGeoSummary,
+  formatRequestClock,
+  formatRequestDateTime,
+  formatSpeed,
+  isRejectPolicy,
+} from "../lib/metrics"
 import { setConnectionsMode, useStoreSelector, type ConnectionsMode } from "../lib/store"
 import { useTabAutoRefresh } from "../lib/liveCache"
 import { connectErrorText, DOWN_TONE, TONES, UP_TONE } from "../lib/ui"
 import { BARE_ROW, EmptyState, InfoRow, LIST_STYLE, SearchField, Tag } from "../components/Kit"
 import { ActivityChips } from "../components/SegmentChips"
+import { useGeoIp } from "../components/GeoIp"
 
 export function listTitle(title: string): string | undefined {
   return Script.env === "home_screen" ? undefined : title
@@ -243,6 +252,8 @@ function RequestDetailView({
 
   const cur = active ? live : r
   const ongoing = Boolean(active) && !cur.completed && !ended
+  const remoteIp = extractIpAddress(cur.remoteAddress) ?? extractIpAddress(cur.remoteHost)
+  const geo = formatGeoSummary(useGeoIp(remoteIp).result)
 
   async function doKill() {
     try {
@@ -288,6 +299,7 @@ function RequestDetailView({
         <InfoRow label="设备" value={cur.deviceName} />
         <InfoRow label="来源" value={cur.source} />
         <InfoRow label="远端" value={cur.remoteAddress ? `${cur.remoteAddress}${cur.remoteHost && cur.remoteHost !== cur.remoteAddress ? `（${cur.remoteHost}）` : ""}` : cur.remoteHost} />
+        <InfoRow label="远端归属" value={geo} />
         <InfoRow label="本机" value={cur.localAddress} mono />
         <InfoRow label="接口" value={cur.interface} />
         <InfoRow label="开始时间" value={formatRequestDateTime(cur.startDate)} />

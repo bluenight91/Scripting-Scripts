@@ -11,8 +11,19 @@ import {
   useState,
   VStack,
 } from "scripting"
-import { flushDns, getDns, testDnsDelay, type DnsEntry } from "../lib/surgeApi"
-import { formatRequestDateTime, surgeTimestampToMs } from "../lib/metrics"
+import {
+  flushDns,
+  getDns,
+  lookupGeoIp,
+  surgeApiErrorKind,
+  surgeApiErrorMessage,
+  testDnsDelay,
+  API_523_MIN_VERSION,
+  type DnsEntry,
+  type GeoIpResult,
+} from "../lib/surgeApi"
+import { formatRequestDateTime, isIpAddress, isPublicIp, surgeTimestampToMs } from "../lib/metrics"
+import { GeoIpInline, GeoIpRows, geoDbDatesText } from "../components/GeoIp"
 import { useStoreSelector } from "../lib/store"
 import { useTabAutoRefresh } from "../lib/liveCache"
 import { connectErrorText, TONES } from "../lib/ui"
@@ -31,6 +42,34 @@ export function DnsView() {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [query, setQuery] = useState("")
+  const [geoInput, setGeoInput] = useState("")
+  const [geoBusy, setGeoBusy] = useState(false)
+  const [geoResult, setGeoResult] = useState<GeoIpResult | null>(null)
+  const [geoError, setGeoError] = useState<string | null>(null)
+
+  async function runGeoLookup() {
+    const ip = geoInput.trim().replace(/^\[|\]$/g, "")
+    if (!ip || geoBusy) return
+    if (!isIpAddress(ip)) {
+      setGeoResult(null)
+      setGeoError("请输入有效的 IPv4 / IPv6 地址")
+      return
+    }
+    setGeoBusy(true)
+    setGeoError(null)
+    try {
+      setGeoResult(await lookupGeoIp(config, ip))
+    } catch (e) {
+      setGeoResult(null)
+      setGeoError(
+        surgeApiErrorKind(e) === "unsupported"
+          ? `IP 归属查询需要 ${API_523_MIN_VERSION}`
+          : `查询失败：${surgeApiErrorMessage(e)}`
+      )
+    } finally {
+      setGeoBusy(false)
+    }
+  }
 
   async function runDnsTest() {
     const domain = testDomain.trim()
@@ -116,6 +155,30 @@ export function DnsView() {
             <Text font={16} foregroundStyle={TONES.red.fg}>清除 DNS 缓存</Text>
           </HStack>
         </Button>
+      </Section>
+      <Section
+        header={<Text>IP 归属</Text>}
+        footer={
+          geoError ? (
+            <Text font={12} foregroundStyle={TONES.red.fg}>{geoError}</Text>
+          ) : geoResult ? (
+            <Text font={12}>{geoDbDatesText(geoResult) ?? "使用 Surge 内置 GeoIP / ASN 数据库"}</Text>
+          ) : (
+            <Text font={12}>{`与 GEOIP、IP-ASN 规则使用同一数据库。需要 ${API_523_MIN_VERSION}。`}</Text>
+          )
+        }
+      >
+        <HStack spacing={12}>
+          <IconBadge icon="mappin.and.ellipse" tone="purple" size={30} filled />
+          <TextField title="IP" value={geoInput} onChanged={setGeoInput} prompt="1.1.1.1 / 2606:4700::1111" />
+          <Button title={geoBusy ? "查询中…" : "查询"} buttonStyle="bordered" disabled={geoBusy || !geoInput.trim()} action={runGeoLookup} />
+        </HStack>
+        {geoResult ? (
+          <>
+            <InfoRow label="地址" value={geoResult.address} mono />
+            <GeoIpRows result={geoResult} />
+          </>
+        ) : null}
       </Section>
       {error ? (
         <Section>
@@ -222,7 +285,10 @@ function DnsDetailView({ e }: { e: DnsEntry }) {
       <Section header={<Text>解析结果</Text>}>
         {records.length > 0 ? (
           records.map((ip, i) => (
-            <Text key={i} font={16} fontDesign="monospaced">{ip}</Text>
+            <VStack key={i} alignment="leading" spacing={2}>
+              <Text font={16} fontDesign="monospaced">{ip}</Text>
+              {isIpAddress(ip) && isPublicIp(ip) ? <GeoIpInline ip={ip} /> : null}
+            </VStack>
           ))
         ) : (
           <Text font={13} foregroundStyle="secondaryLabel">无解析记录</Text>
