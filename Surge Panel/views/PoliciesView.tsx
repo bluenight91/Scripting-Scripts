@@ -16,6 +16,7 @@ import {
 } from "scripting"
 import {
   getPolicies,
+  getPoliciesWithExternal,
   getPolicyBenchmarks,
   getPolicyDetail,
   getPolicyGroupSelection,
@@ -24,7 +25,9 @@ import {
   getProxyGroupOrder,
   orderPolicyGroupNames,
   selectPolicyGroup,
+  surgeApiErrorMessage,
   testPolicies,
+  testPoliciesByIdentifier,
   testPolicyGroup,
   type PolicyBenchmarkResult,
   type PolicyOption,
@@ -269,6 +272,7 @@ export function GroupDetailView({
   const config = useStoreSelector((s) => s.config)
   const [selection, setSelection] = useState<string | null>(initialSelection)
   const [standalone, setStandalone] = useState<Set<string> | null>(null)
+  const [externalIds, setExternalIds] = useState<Record<string, string>>({})
   const [details, setDetails] = useState<Record<string, string>>({})
   const [delays, setDelays] = useState<Record<string, number | null>>({})
   const [elected, setElected] = useState<string[] | null>(null)
@@ -297,12 +301,17 @@ export function GroupDetailView({
     refreshBenchmarks()
   }, [config])
 
-  // 独立策略（/v1/policies）才能单独测延迟；组内嵌节点 HTTP API 不支持延迟测试
+  // 独立策略（/v1/policies）可用 /v1/policies/test 测延迟；policy-path 外部节点只能凭 identifier 走脚本测速
   useEffect(() => {
     let cancelled = false
-    getPolicies(config)
+    getPoliciesWithExternal(config)
+      .catch(() => getPolicies(config).then((r) => ({ proxies: r.proxies, external: null })))
       .then((r) => {
-        if (!cancelled) setStandalone(new Set(r.proxies))
+        if (cancelled) return
+        setStandalone(new Set(r.proxies))
+        const ids: Record<string, string> = {}
+        for (const p of r.external ?? []) if (p.group === groupName) ids[p.name] = p.identifier
+        setExternalIds(ids)
       })
       .catch(() => {
         if (!cancelled) setStandalone(new Set())
@@ -310,9 +319,11 @@ export function GroupDetailView({
     return () => {
       cancelled = true
     }
-  }, [config])
+  }, [config, groupName])
 
   const isStandalone = (name: string) => standalone?.has(name) ?? false
+  const externalId = (name: string) => (isStandalone(name) ? undefined : externalIds[name])
+  const externalCount = options.filter((o) => !o.isGroup && externalId(o.name)).length
 
   // test_results 只包含 url-test/fallback/load-balance 组——据此判断组类型
   useEffect(() => {
@@ -408,11 +419,36 @@ export function GroupDetailView({
         }
         done++
         setTestProgress(`延迟测试 ${done}/${names.length}…`)
-        setDelays({ ...result })
+        setDelays((d) => ({ ...d, ...result }))
       }
     })()
 
-    await Promise.all([groupTest, latencyTest])
+    // 3) 外部策略组节点：按 identifier 经 $httpClient 测速
+    const externalTest = (async () => {
+      const targets = options
+        .filter((o) => !o.isGroup && o.enabled && externalId(o.name))
+        .map((o) => ({ name: o.name, id: externalId(o.name)! }))
+      if (targets.length === 0) return
+      const toNames = (byId: Record<string, number | null>) => {
+        const out: Record<string, number | null> = {}
+        for (const t of targets) if (t.id in byId) out[t.name] = byId[t.id]
+        return out
+      }
+      try {
+        await testPoliciesByIdentifier(
+          config,
+          targets.map((t) => t.id),
+          (partial) => {
+            setDelays((d) => ({ ...d, ...toNames(partial) }))
+            setTestProgress(`外部节点 ${Object.keys(partial).length}/${targets.length}…`)
+          }
+        )
+      } catch (e) {
+        setError(`外部节点测速失败：${surgeApiErrorMessage(e)}`)
+      }
+    })()
+
+    await Promise.all([groupTest, latencyTest, externalTest])
     // 组测速完成后 Surge 会更新基准测试缓存，重新拉取以刷新所有节点的延迟显示
     await refreshBenchmarks()
     await getGroupTestResults(config)
@@ -432,6 +468,9 @@ export function GroupDetailView({
             {autoGroup === false
               ? "点按节点即可切换。延迟来自 Surge 基准测试缓存（含内嵌/链式节点，由 Surge 后台定期自动更新）；手动选择组不支持面板内组测速"
               : "点按节点即可切换。延迟来自 Surge 基准测试缓存与组测速结果；「全部测速」会刷新本组。绿色「最优」为自动组当选节点"}
+            {externalCount > 0
+              ? `\n${externalCount} 个「外部」节点来自 policy-path，「全部测速」经脚本 $httpClient 逐个请求（需开启脚本功能），数值为完整 HTTP 耗时`
+              : ""}
           </Text>
         }
       >
@@ -505,6 +544,7 @@ export function GroupDetailView({
                 <HStack spacing={6}>
                   <Text font={16} fontWeight={isSelected ? "semibold" : "regular"} lineLimit={1} minScaleFactor={0.7}>{o.name}</Text>
                   {isElected ? <Tag text="最优" tone="green" /> : null}
+                  {externalId(o.name) ? <Tag text="外部" tone="teal" /> : null}
                 </HStack>
                 <Text font={12} foregroundStyle="secondaryLabel">{o.typeDescription}</Text>
                 {details[o.name] ? (
