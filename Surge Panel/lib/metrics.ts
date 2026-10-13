@@ -502,29 +502,115 @@ export function parsePrimaryAddresses(raw: unknown): { ipv4?: string; ipv6?: str
 }
 
 /** /v1/scripting/evaluate 执行 `$done($environment)` 的返回 → Surge 版本 / 构建号 */
-export function parseEngineInfo(raw: unknown): { version?: string; build?: string; system?: string } {
-  const unwrap = (v: unknown, depth = 0): Record<string, unknown> | null => {
-    if (depth > 3 || v == null) return null
-    if (typeof v === "string") {
-      try {
-        return unwrap(JSON.parse(v), depth + 1)
-      } catch {
-        return null
-      }
+/** evaluate 的返回外层包装未文档化：逐层解开 JSON 字符串与 result / output / value / data，直到对象含指定键 */
+function unwrapScriptResult(raw: unknown, keys: string[], depth = 0): Record<string, unknown> | null {
+  if (depth > 3 || raw == null) return null
+  if (typeof raw === "string") {
+    try {
+      return unwrapScriptResult(JSON.parse(raw), keys, depth + 1)
+    } catch {
+      return null
     }
-    if (typeof v !== "object" || Array.isArray(v)) return null
-    const o = v as Record<string, unknown>
-    if ("surge-version" in o || "surge-build" in o) return o
-    for (const k of ["result", "output", "value", "data"]) {
-      const inner = unwrap(o[k], depth + 1)
-      if (inner) return inner
-    }
-    return null
   }
-  const env = unwrap(raw)
+  if (typeof raw !== "object" || Array.isArray(raw)) return null
+  const o = raw as Record<string, unknown>
+  if (keys.some((k) => k in o)) return o
+  for (const k of ["result", "output", "value", "data"]) {
+    const inner = unwrapScriptResult(o[k], keys, depth + 1)
+    if (inner) return inner
+  }
+  return null
+}
+
+export function parseEngineInfo(raw: unknown): { version?: string; build?: string; system?: string } {
+  const env = unwrapScriptResult(raw, ["surge-version", "surge-build"])
   if (!env) return {}
   const str = (v: unknown) => (v == null || v === "" ? undefined : String(v))
   return { version: str(env["surge-version"]), build: str(env["surge-build"]), system: str(env.system) }
+}
+
+export type ExternalPolicy = { name: string; group: string; identifier: string }
+
+function firstString(o: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = o[k]
+    if (typeof v === "string" && v) return v
+    if (typeof v === "number") return String(v)
+  }
+  return undefined
+}
+
+function toExternalPolicy(raw: unknown, groupHint?: string): ExternalPolicy | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null
+  const o = raw as Record<string, unknown>
+  const name = firstString(o, ["name", "policy", "policyName", "policy_name", "policy-name"])
+  const group = firstString(o, ["group", "groupName", "group_name", "group-name", "policyGroup", "policy-group"]) ?? groupHint
+  const identifier = firstString(o, ["identifier", "id", "key", "lineHash", "line-hash"])
+  return name && group && identifier ? { name, group, identifier } : null
+}
+
+/**
+ * GET /v1/policies?include_external=true 的 external-policies（字段名尚无文档，宽松解析）。
+ * 字段缺失（旧版 Surge 忽略该参数）返回 null；兼容数组与「组名 → 数组」两种形状。
+ */
+export function parseExternalPolicies(body: unknown): ExternalPolicy[] | null {
+  if (!body || typeof body !== "object") return null
+  const o = body as Record<string, unknown>
+  const raw = o["external-policies"] ?? o.externalPolicies ?? o.external_policies
+  if (raw == null) return null
+  const out: ExternalPolicy[] = []
+  if (Array.isArray(raw)) {
+    for (const e of raw) {
+      const p = toExternalPolicy(e)
+      if (p) out.push(p)
+    }
+  } else if (typeof raw === "object") {
+    for (const [group, list] of Object.entries(raw as Record<string, unknown>)) {
+      if (!Array.isArray(list)) continue
+      for (const e of list) {
+        const p = toExternalPolicy(e, group)
+        if (p) out.push(p)
+      }
+    }
+  }
+  return out
+}
+
+/** 通过 $httpClient 的 policy 选项（外部策略只能用 identifier 引用）并发测量请求耗时 */
+export function buildPolicyLatencyScript(identifiers: string[], url: string, timeoutSec: number): string {
+  return [
+    `const ids = ${JSON.stringify(identifiers)};`,
+    `const url = ${JSON.stringify(url)};`,
+    "const results = {};",
+    "let left = ids.length;",
+    "if (left === 0) $done({ results });",
+    "ids.forEach((id) => {",
+    "  const t0 = Date.now();",
+    `  $httpClient.get({ url, policy: id, timeout: ${Math.max(1, Math.round(timeoutSec))} }, (error, response) => {`,
+    "    results[id] = error || !response ? null : Math.max(1, Date.now() - t0);",
+    "    left -= 1;",
+    "    if (left === 0) $done({ results });",
+    "  });",
+    "});",
+  ].join("\n")
+}
+
+/** buildPolicyLatencyScript 的 evaluate 返回 → identifier → 毫秒（失败为 null） */
+export function parsePolicyLatencyResults(raw: unknown): Record<string, number | null> | null {
+  const o = unwrapScriptResult(raw, ["results"])
+  const r = o?.results
+  if (!r || typeof r !== "object" || Array.isArray(r)) return null
+  const out: Record<string, number | null> = {}
+  for (const [k, v] of Object.entries(r as Record<string, unknown>)) {
+    out[k] = typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null
+  }
+  return out
+}
+
+export function chunk<T>(list: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < list.length; i += Math.max(1, size)) out.push(list.slice(i, i + Math.max(1, size)))
+  return out
 }
 
 export type MemoryPoint = { t: number; mem: number }

@@ -1,7 +1,19 @@
 // Surge HTTP API 封装（端点文档：https://manual.nssurge.com/others/http-api.html）
 import { fetch } from "scripting"
 import { hostForUrl } from "./connection"
-import { parseEngineInfo, parsePrometheus, uptimeSecondsFromStartTime, type MetricSample } from "./metrics"
+import {
+  buildPolicyLatencyScript,
+  chunk,
+  parseEngineInfo,
+  parseExternalPolicies,
+  parsePolicyLatencyResults,
+  parsePrometheus,
+  uptimeSecondsFromStartTime,
+  type ExternalPolicy,
+  type MetricSample,
+} from "./metrics"
+
+export type { ExternalPolicy }
 
 export type SurgeConfig = {
   protocol: "http" | "https"
@@ -270,6 +282,47 @@ export const getEvents = (c: SurgeConfig) => get<{ events: SurgeEvent[] }>(c, "/
 // ---------- 策略 ----------
 
 export const getPolicies = (c: SurgeConfig) => get<{ proxies: string[] }>(c, "/v1/policies")
+
+/**
+ * include_external=true（Surge TestFlight 新增）：额外返回 policy-path 外部策略组里的节点。
+ * 旧版本忽略该参数，external 为 null，调用方按「不支持」处理即可。
+ */
+export async function getPoliciesWithExternal(
+  c: SurgeConfig
+): Promise<{ proxies: string[]; external: ExternalPolicy[] | null }> {
+  const r = await get<Record<string, unknown>>(c, "/v1/policies?include_external=true")
+  const proxies = Array.isArray(r?.proxies) ? (r.proxies as unknown[]).map(String) : []
+  return { proxies, external: parseExternalPolicies(r) }
+}
+
+const LATENCY_URL = "http://www.gstatic.com/generate_204"
+const LATENCY_BATCH = 8
+const LATENCY_TIMEOUT_SEC = 5
+
+/**
+ * 外部策略无法按名称交给 /v1/policies/test，只能在脚本里用 $httpClient 的 policy: identifier 发请求计时。
+ * 数值是完整 HTTP 往返耗时，与 Surge 基准测试口径不同；需要 Surge 开启脚本功能。
+ */
+export async function testPoliciesByIdentifier(
+  c: SurgeConfig,
+  identifiers: string[],
+  onBatch?: (partial: Record<string, number | null>) => void
+): Promise<Record<string, number | null>> {
+  const all: Record<string, number | null> = {}
+  for (const batch of chunk(identifiers, LATENCY_BATCH)) {
+    const raw = await evaluateScript(
+      c,
+      buildPolicyLatencyScript(batch, LATENCY_URL, LATENCY_TIMEOUT_SEC),
+      "generic",
+      LATENCY_TIMEOUT_SEC + 3
+    )
+    const parsed = parsePolicyLatencyResults(raw)
+    if (!parsed) throw new SurgeApiError("protocol", "脚本未返回测速结果，请确认 Surge 已开启脚本功能")
+    for (const id of batch) all[id] = parsed[id] ?? null
+    onBatch?.({ ...all })
+  }
+  return all
+}
 
 // Surge 自身的基准测试缓存（iOS ≥4.9.5）：按 lineHash 覆盖所有节点（含组内嵌/链式节点）
 export type PolicyBenchmarkResult = {
