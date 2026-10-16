@@ -13,11 +13,11 @@ import { GradientBar } from "./GradientBar"
 import { HeroCard, ValueText } from "./Kit"
 import { UI } from "../lib/theme"
 
-export const HERO_DIM = "rgba(255,255,255,0.78)"
+export const HERO_DIM = "rgba(255,255,255,0.9)"
 const BAR_COLORS = ["rgba(255,255,255,0.95)", "white"]
-const BAR_TRACK = "rgba(255,255,255,0.25)"
-const BAR_WARN = ["#FFE08A", "#FFD24D"]
-const BAR_FULL = ["#FFB4A8", "#FF8A7A"]
+const BAR_TRACK = "rgba(255,255,255,0.32)"
+const BAR_WARN = ["#C2410C", "#9A3412"]
+const BAR_FULL = ["#B91C1C", "#7F1D1D"]
 
 function barColors(r: number) {
   return r >= 1 ? BAR_FULL : r >= 0.8 ? BAR_WARN : BAR_COLORS
@@ -28,7 +28,7 @@ export function HeroChip({ icon, text }: { icon?: string; text: string }) {
     <HStack
       spacing={5}
       padding={{ horizontal: 10, vertical: 5 }}
-      background={{ style: "rgba(255,255,255,0.18)", shape: "capsule" }}
+      background={{ style: "rgba(255,255,255,0.24)", shape: "capsule" }}
     >
       {icon ? <Image systemName={icon} font={11} foregroundStyle="white" /> : null}
       <Text font={12} fontWeight="semibold" fontDesign="rounded" foregroundStyle="white" lineLimit={1}>{text}</Text>

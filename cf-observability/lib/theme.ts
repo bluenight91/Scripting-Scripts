@@ -32,7 +32,7 @@ export type Tone =
 
 // fg 用系统语义色随深浅色自适应；soft 为同色 16% 透明底，深浅色下都成立
 export const TONES: Record<Tone, { fg: Color; soft: Color }> = {
-  accent: { fg: "systemIndigo", soft: "rgba(94,92,230,0.16)" },
+  accent: { fg: "#F38020", soft: "rgba(243,128,32,0.16)" },
   blue: { fg: "systemBlue", soft: "rgba(10,132,255,0.16)" },
   teal: { fg: "systemTeal", soft: "rgba(48,176,199,0.18)" },
   green: { fg: "systemGreen", soft: "rgba(52,199,89,0.16)" },
@@ -66,26 +66,32 @@ export function controlSurface(shape: "capsule" | ReturnType<typeof roundedShape
   return { background: { style: "thinMaterial" as const, shape } }
 }
 
-// 页面背景：顶部一层很淡的暖橙，向下过渡到分组背景色
+// Cloudflare 标志配色：右下角的亮黄橙与主体橙
+export const CF_YELLOW: Color = "#FAAD3F"
+export const CF_ORANGE: Color = "#F38020"
+
+// 页面背景：顶部一层很淡的暖黄，向下过渡到分组背景色
 export const PAGE_BACKDROP: DynamicShapeStyle = {
   light: gradient("linear", {
-    colors: ["#FBEADF", "#F2F2F7", "#F2F2F7"],
+    colors: ["#FDF3E1", "#F2F2F7", "#F2F2F7"],
     startPoint: "top",
     endPoint: "bottom",
   }),
   dark: gradient("linear", {
-    colors: ["#2A1A10", "#000000", "#000000"],
+    colors: ["#2A2010", "#000000", "#000000"],
     startPoint: "top",
     endPoint: "bottom",
   }),
 }
 
-// 首屏主卡片渐变（白字），Cloudflare 橙色系，深浅色一致
+// 首屏主卡片渐变（白字），由标志黄过渡到标志橙，深浅色一致
 export const HERO_GRADIENT = gradient("linear", {
-  colors: ["#F6821F", "#E5571F", "#C2410C"],
+  colors: ["#FBB548", "#FAAD3F", "#F38020"],
   startPoint: "topLeading",
   endPoint: "bottomTrailing",
 })
+
+export const HERO_SHADOW = { color: "rgba(196,110,20,0.16)" as Color, radius: 8, x: 0, y: 3 }
 
 /** 用量比例 → 色调：<70% 绿，<90% 橙，否则红 */
 export function usageTone(ratio: number): Tone {

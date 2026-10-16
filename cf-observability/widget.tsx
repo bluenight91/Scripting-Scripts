@@ -1,4 +1,4 @@
-// 桌面 / 锁屏小组件：选定 Worker / Pages 项目的限额使用（Free 每日 / Paid 每周期），每 15 分钟刷新；失败时回退最近一次缓存
+// 桌面 / 锁屏小组件：账户限额使用（Free 每日 / Paid 每周期），选定项目时附带该项目运行情况；每 15 分钟刷新，失败时回退最近一次缓存
 import {
   BarChart,
   Chart,
@@ -30,20 +30,38 @@ import {
   type Project,
   type QuotaSummary,
 } from "./lib/cfCore"
-import { getToken, isConfigured, loadSettings, resolveProject } from "./lib/settings"
+import { getToken, isConfigured, loadCachedProjects, loadSettings, resolveProject } from "./lib/settings"
 import { fetchWidgetData, loadWidgetCache, snapshotSummary, type WidgetData } from "./lib/usage"
-import { TONES, usageTone } from "./lib/theme"
+import { CF_ORANGE, CF_YELLOW, TONES, usageTone } from "./lib/theme"
 
 const REFRESH_MS = 15 * 60_000
-const ORANGE: Color = "#F6821F"
+const ORANGE = CF_ORANGE
 const BG = { light: "#FFFFFF", dark: "#1C1C1E" } as const
 const TRACK: Color = "rgba(142,142,147,0.22)"
 
 type Model = {
   data: WidgetData | null
   project: Project | null
+  accountName: string
   error: string | null
   configured: boolean
+}
+
+type TopItem = { key: string; kind: Project["kind"]; name: string; requests: number }
+
+/** 账户内请求最多的项目；Pages 的 scriptName 是内部生产脚本名，用缓存的项目列表换成项目名 */
+function topProjects(data: WidgetData, n: number): TopItem[] {
+  const cached = loadCachedProjects()
+  const nameOf = (kind: Project["kind"], script: string) =>
+    cached.find((p) => p.kind === kind && p.scriptName === script)?.name ?? script
+  const items: TopItem[] = []
+  for (const [script, t] of Object.entries(data.snapshot.usage.workers)) {
+    if (t.requests > 0) items.push({ key: `w:${script}`, kind: "worker", name: nameOf("worker", script), requests: t.requests })
+  }
+  for (const [script, t] of Object.entries(data.snapshot.usage.pages)) {
+    if (t.requests > 0) items.push({ key: `p:${script}`, kind: "pages", name: nameOf("pages", script), requests: t.requests })
+  }
+  return items.sort((a, b) => b.requests - a.requests).slice(0, n)
 }
 
 function displayWidth(): number {
@@ -70,12 +88,13 @@ function Bar({ ratio, width, height = 8 }: { ratio: number; width: number; heigh
   )
 }
 
-function Header({ project, compact }: { project: Project | null; compact?: boolean }) {
+function Header({ m, compact }: { m: Model; compact?: boolean }) {
+  const icon = !m.project ? "cloud.fill" : m.project.kind === "pages" ? "doc.richtext.fill" : "bolt.fill"
   return (
     <HStack spacing={5}>
-      <Image systemName={project?.kind === "pages" ? "doc.richtext.fill" : "bolt.fill"} font={compact ? 11 : 12} foregroundStyle={ORANGE} widgetAccentable />
+      <Image systemName={icon} font={compact ? 11 : 12} foregroundStyle={CF_YELLOW} widgetAccentable />
       <Text font={compact ? 12 : 13} fontWeight="semibold" lineLimit={1} minScaleFactor={0.7}>
-        {project?.name ?? "账户总用量"}
+        {m.project?.name ?? "Cloudflare"}
       </Text>
     </HStack>
   )
@@ -143,6 +162,64 @@ function StatLine({ icon, label, value, tone }: { icon: string; label: string; v
   )
 }
 
+function AccountStats({ m, q }: { m: Model; q: QuotaSummary }) {
+  const u = m.data?.snapshot.usage
+  const plan = q.plan
+  const errs = u?.account.errors ?? 0
+  const top = m.data ? topProjects(m.data, 1)[0] : undefined
+  return (
+    <VStack alignment="leading" spacing={6}>
+      <StatLine icon="bolt.fill" label="Workers" value={formatCount(u?.workersTotal.requests ?? null)} tone={ORANGE} />
+      <StatLine icon="doc.richtext.fill" label="Pages" value={formatCount(u?.pagesTotal.requests ?? null)} tone={TONES.blue.fg} />
+      <StatLine icon="xmark.octagon.fill" label={plan === "free" ? "今日错误" : "周期错误"} value={formatCount(errs)} tone={errs > 0 ? TONES.red.fg : undefined} />
+      {plan === "paid" ? (
+        <StatLine
+          icon="cpu"
+          label="CPU 周期"
+          value={q.cpuMs == null ? "—" : `${formatPercent(q.cpuRatio)}`}
+          tone={q.cpuRatio != null ? TONES[usageTone(q.cpuRatio)].fg : undefined}
+        />
+      ) : (
+        <StatLine icon="crown.fill" label={top ? top.name : "最高"} value={top ? formatPercent(top.requests / Math.max(1, q.requests)) : "—"} />
+      )}
+      {plan === "paid" && q.overage && q.overage.totalUSD > 0 ? (
+        <StatLine icon="dollarsign.circle.fill" label="超额估算" value={formatUSD(q.overage.totalUSD)} tone={TONES.orange.fg} />
+      ) : null}
+    </VStack>
+  )
+}
+
+function SideStats({ m, q }: { m: Model; q: QuotaSummary }) {
+  return m.project ? <ProjectStats m={m} q={q} /> : <AccountStats m={m} q={q} />
+}
+
+function TopList({ m, q, width }: { m: Model; q: QuotaSummary; width: number }) {
+  const items = m.data ? topProjects(m.data, 4) : []
+  if (items.length === 0) return null
+  const max = items[0].requests
+  return (
+    <VStack alignment="leading" spacing={6}>
+      <Text font={11} foregroundStyle="secondaryLabel">用量最高的项目</Text>
+      {items.map((it) => (
+        <VStack key={it.key} alignment="leading" spacing={3}>
+          <HStack spacing={5}>
+            <Image systemName={it.kind === "pages" ? "doc.richtext.fill" : "bolt.fill"} font={10} foregroundStyle={it.kind === "pages" ? TONES.blue.fg : ORANGE} frame={{ width: 14 }} />
+            <Text font={11} lineLimit={1} minScaleFactor={0.7}>{it.name}</Text>
+            <Spacer />
+            <Text font={11} fontWeight="semibold" fontDesign="rounded" monospacedDigit lineLimit={1}>
+              {`${formatCount(it.requests)} · ${formatPercent(it.requests / Math.max(1, q.requests))}`}
+            </Text>
+          </HStack>
+          <ZStack alignment="leading" frame={{ width, height: 4 }}>
+            <RoundedRectangle cornerRadius={2} style="continuous" fill={TRACK} />
+            <RoundedRectangle cornerRadius={2} style="continuous" fill={CF_YELLOW} frame={{ width: Math.max(4, width * (it.requests / Math.max(1, max))), height: 4 }} widgetAccentable />
+          </ZStack>
+        </VStack>
+      ))}
+    </VStack>
+  )
+}
+
 function ProjectStats({ m, q }: { m: Model; q: QuotaSummary }) {
   const d = m.data?.last24h
   const plan = q.plan
@@ -182,14 +259,14 @@ function SmallView({ m, q }: { m: Model; q: QuotaSummary }) {
   const w = displayWidth() - 28
   return (
     <VStack alignment="leading" spacing={6} padding={14} widgetBackground={BG} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}>
-      <Header project={m.project} compact />
+      <Header m={m} compact />
       <Spacer />
       <QuotaBlock q={q} width={w} />
-      {q.project ? (
-        <Text font={10} fontDesign="rounded" monospacedDigit foregroundStyle={ORANGE} lineLimit={1}>
-          {`本项目 ${formatCount(q.project.requests)} · ${formatPercent(q.project.share)}`}
-        </Text>
-      ) : null}
+      <Text font={10} fontDesign="rounded" monospacedDigit foregroundStyle={ORANGE} lineLimit={1} minScaleFactor={0.7}>
+        {q.project
+          ? `本项目 ${formatCount(q.project.requests)} · ${formatPercent(q.project.share)}`
+          : `Workers ${formatCount(m.data?.snapshot.usage.workersTotal.requests ?? null)} · Pages ${formatCount(m.data?.snapshot.usage.pagesTotal.requests ?? null)}`}
+      </Text>
       <Footer m={m} q={q} />
     </VStack>
   )
@@ -200,7 +277,7 @@ function MediumView({ m, q }: { m: Model; q: QuotaSummary }) {
   return (
     <VStack alignment="leading" spacing={8} padding={14} widgetBackground={BG} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}>
       <HStack>
-        <Header project={m.project} />
+        <Header m={m} />
         <Spacer />
         <Text font={10} fontWeight="semibold" foregroundStyle={ORANGE}>Cloudflare</Text>
       </HStack>
@@ -209,7 +286,7 @@ function MediumView({ m, q }: { m: Model; q: QuotaSummary }) {
           <QuotaBlock q={q} width={col} />
         </VStack>
         <VStack alignment="leading" frame={{ width: col }}>
-          <ProjectStats m={m} q={q} />
+          <SideStats m={m} q={q} />
         </VStack>
       </HStack>
       <Spacer />
@@ -229,7 +306,7 @@ function LargeView({ m, q }: { m: Model; q: QuotaSummary }) {
   return (
     <VStack alignment="leading" spacing={10} padding={16} widgetBackground={BG} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}>
       <HStack>
-        <Header project={m.project} />
+        <Header m={m} />
         <Spacer />
         <Text font={10} fontWeight="semibold" foregroundStyle={ORANGE}>Cloudflare</Text>
       </HStack>
@@ -238,10 +315,11 @@ function LargeView({ m, q }: { m: Model; q: QuotaSummary }) {
           <QuotaBlock q={q} width={col} big />
         </VStack>
         <VStack alignment="leading" frame={{ width: col }}>
-          <ProjectStats m={m} q={q} />
+          <SideStats m={m} q={q} />
         </VStack>
       </HStack>
-      {series.length >= 2 ? (
+      {!m.project ? <TopList m={m} q={q} width={w} /> : null}
+      {m.project && series.length >= 2 ? (
         <VStack alignment="leading" spacing={4}>
           <Text font={11} foregroundStyle="secondaryLabel">近 24 小时请求</Text>
           <Chart frame={{ height: 90 }} chartLegend="hidden" chartYAxis="hidden">
@@ -250,14 +328,14 @@ function LargeView({ m, q }: { m: Model; q: QuotaSummary }) {
                 label: new Date(p.t),
                 value: p.requests,
                 unit: "hour" as const,
-                foregroundStyle: ORANGE,
+                foregroundStyle: CF_YELLOW,
                 cornerRadius: 2,
               }))}
             />
           </Chart>
         </VStack>
       ) : null}
-      {statuses.length > 0 ? (
+      {m.project && statuses.length > 0 ? (
         <HStack spacing={10}>
           {statuses.map((s) => (
             <VStack key={s.status} alignment="leading" spacing={1} frame={{ maxWidth: "infinity", alignment: "leading" }}>
@@ -293,7 +371,7 @@ function RectangularView({ m, q }: { m: Model; q: QuotaSummary }) {
     <VStack alignment="leading" spacing={2}>
       <HStack spacing={4}>
         <Image systemName="cloud.fill" font={11} />
-        <Text font={12} fontWeight="semibold" lineLimit={1}>{m.project?.name ?? "Cloudflare"}</Text>
+        <Text font={12} fontWeight="semibold" lineLimit={1}>{m.project?.name ?? (m.accountName || "Cloudflare")}</Text>
       </HStack>
       <Text font={12} fontDesign="rounded" monospacedDigit lineLimit={1} minScaleFactor={0.7}>
         {`${formatPercent(q.requestRatio)} · ${formatCount(q.requests)} / ${formatCount(q.requestLimit)}`}
@@ -307,7 +385,7 @@ function WidgetView({ m }: { m: Model }) {
   const family = Widget.family as string
   const accessory = family === "accessoryCircular" || family === "accessoryRectangular" || family === "accessoryInline"
   if (!m.configured) {
-    return accessory ? <Text font={12}>未配置</Text> : <Message icon="key.fill" title="未配置 API 令牌" detail="打开「Cloudflare 观测」脚本，在设置中填写令牌与 Account ID" />
+    return accessory ? <Text font={12}>未配置</Text> : <Message icon="key.fill" title="未配置 API 令牌" detail="打开 Cloudflare Observability 脚本，在设置中填写令牌与 Account ID" />
   }
   if (!m.data) {
     return accessory ? <Text font={12}>加载失败</Text> : <Message icon="exclamationmark.triangle.fill" title="加载失败" detail={m.error ?? undefined} />
@@ -325,7 +403,7 @@ async function run() {
   const settings = loadSettings()
   const token = getToken()
   const project = resolveProject(Widget.parameter, settings.widgetProject)
-  const m: Model = { data: null, project, error: null, configured: isConfigured(settings, token) }
+  const m: Model = { data: null, project, accountName: settings.accountName, error: null, configured: isConfigured(settings, token) }
   if (m.configured) {
     try {
       m.data = await fetchWidgetData(token, settings, project)
