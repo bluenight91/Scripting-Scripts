@@ -36,7 +36,7 @@
 
 ## 使用
 
-1. **导入脚本**：下载仓库根目录的 [`cf-observability.scripting`](../cf-observability.scripting) 用 Scripting 打开；或在 Scripting 中用「GitHub 文件夹链接导入」粘贴本目录的 GitHub 树链接。
+1. **导入脚本**：[一键导入](https://www.scripting.fun/import_scripts/?urls=%5B%22https%3A%2F%2Fgithub.com%2Fbluenight91%2FScripting-Scripts%2Ftree%2Fmain%2Fcf-observability%22%5D)；或在 Scripting 中填入本目录的 GitHub 链接 `https://github.com/bluenight91/Scripting-Scripts/tree/main/cf-observability`。
 2. **配置**：打开脚本，首次会弹出设置：粘贴 API 令牌，点「自动识别账户」或手动填写 Account ID（控制台 Workers & Pages 概览页右侧），选择套餐（Paid 另选账单周期起始日，按订阅续费日填写），保存。
 3. **选择小组件项目（可选）**：在列表中左滑 / 长按项目，或在项目详情中点「设为小组件项目」（例如 `cf-workers-tgproxy`）；再次操作即可取消，不选时小组件显示账户总用量。
 4. **添加小组件**：桌面添加 Scripting 小组件 → 编辑小组件 → 选择本脚本。Parameter 留空显示选定项目（未选定则为账户总用量）；填项目名（可加 `worker:` / `pages:` 前缀）或 `account` 可覆盖，方便同时放多个小组件。
