@@ -1,6 +1,6 @@
-# Cloudflare 观测 for Scripting
+# Cloudflare Observability for Scripting
 
-一个运行在 iOS [Scripting](https://scriptingapp.github.io/zh/index) App 上的 Cloudflare Workers / Pages 观测脚本。用 Cloudflare **用户 API 令牌**读取 GraphQL Analytics 与 Workers Observability，在手机上查看账户限额、项目运行指标与日志；桌面 / 锁屏小组件显示选定项目的限额使用。与 Surge Panel、frp 管理器共用同一套视觉语言。
+一个运行在 iOS [Scripting](https://scriptingapp.github.io/zh/index) App 上的 Cloudflare Workers / Pages 观测脚本。用 Cloudflare **用户 API 令牌**读取 GraphQL Analytics 与 Workers Observability，在手机上查看账户限额、项目运行指标与日志；桌面 / 锁屏小组件显示账户或选定项目的限额使用。与 Surge Panel、frp 管理器共用同一套视觉语言。
 
 ## 功能
 
@@ -11,9 +11,10 @@
 - **项目详情**：1 小时 / 24 小时 / 7 天 / 本周期切换；请求、错误率、子请求、CPU P50 / P99（对比单次调用上限，Free 为 10 ms）、Wall time P99、CPU 合计；请求柱状图；调用状态分布（成功 / 客户端断开 / 超出 CPU 限制 / 脚本异常…）
 - **日志与事件**（Workers Observability，仅 Worker）：最近事件、只看错误、全文搜索；按路径 / 状态码 / 结果 / 国家 / 数据中心分组的 Top 列表；点按查看事件详情与原始 JSON（可复制）
 - **小组件**
-  - 小：项目名、账户请求用量、进度条、本项目占比、重置倒计时
-  - 中：左侧账户限额，右侧项目占比 / 请求 / 24h 错误 / CPU P99（Free）或 CPU 周期用量（Paid）/ 超 CPU 次数
-  - 大：在中尺寸基础上加近 24 小时请求柱状图与调用状态占比
+  - 未选定项目时显示账户总用量；选定项目后附带该项目的运行情况，可随时取消
+  - 小：账户请求用量、进度条、重置倒计时，以及本项目占比（或 Workers / Pages 分项）
+  - 中：左侧账户限额，右侧项目占比 / 请求 / 24h 错误 / CPU P99（Free）或 CPU 周期用量（Paid）；账户模式为 Workers / Pages 请求、错误与用量最高的项目
+  - 大：项目模式加近 24 小时请求柱状图与调用状态占比；账户模式加用量最高的 4 个项目
   - 锁屏圆形 / 矩形 / 行内：请求用量百分比
   - 每 15 分钟刷新；网络失败时显示最近一次缓存并标注时间
 
@@ -35,10 +36,10 @@
 
 ## 使用
 
-1. **导入脚本**：下载仓库根目录的 [`cf-observability.scripting`](../cf-observability.scripting) 用 Scripting 打开；或在 Scripting 中用「GitHub 文件夹链接导入」粘贴本目录的 GitHub 树链接。
+1. **导入脚本**：[一键导入](https://www.scripting.fun/import_scripts/?urls=%5B%22https%3A%2F%2Fgithub.com%2Fbluenight91%2FScripting-Scripts%2Ftree%2Fmain%2Fcf-observability%22%5D)；或在 Scripting 中填入本目录的 GitHub 链接 `https://github.com/bluenight91/Scripting-Scripts/tree/main/cf-observability`。
 2. **配置**：打开脚本，首次会弹出设置：粘贴 API 令牌，点「自动识别账户」或手动填写 Account ID（控制台 Workers & Pages 概览页右侧），选择套餐（Paid 另选账单周期起始日，按订阅续费日填写），保存。
-3. **选择小组件项目**：在列表中左滑 / 长按项目，或在项目详情中点「设为小组件项目」（例如 `cf-workers-tgproxy`）。
-4. **添加小组件**：桌面添加 Scripting 小组件 → 编辑小组件 → 选择本脚本。Parameter 留空显示选定项目；填项目名（可加 `worker:` / `pages:` 前缀）可覆盖，方便同时放多个小组件。
+3. **选择小组件项目（可选）**：在列表中左滑 / 长按项目，或在项目详情中点「设为小组件项目」（例如 `cf-workers-tgproxy`）；再次操作即可取消，不选时小组件显示账户总用量。
+4. **添加小组件**：桌面添加 Scripting 小组件 → 编辑小组件 → 选择本脚本。Parameter 留空显示选定项目（未选定则为账户总用量）；填项目名（可加 `worker:` / `pages:` 前缀）或 `account` 可覆盖，方便同时放多个小组件。
 
 ### 开启 Workers Logs
 

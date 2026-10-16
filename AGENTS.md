@@ -24,11 +24,7 @@ A collection of scripts for the iOS [Scripting](https://scriptingapp.github.io) 
 - For a syntax check of TSX without adding tooling to the repo, install esbuild in a temp directory (e.g. `/tmp`) and run `esbuild --loader:.tsx=tsx` over the files.
 - Real end-to-end testing requires the iOS Scripting app plus a reachable Surge instance (HTTP API + Prometheus Metrics Endpoint), frp instance (admin / dashboard port) or a Cloudflare user API token (see `cf-observability/README.md` for required permissions). This can't be done from the cloud VM.
 
-### "Build" = packaging the `.scripting` bundles
-Each `.scripting` file is a plain zip of its script directory (imported by opening it in the Scripting app). Reproduce them with:
-```bash
-zip -r -X "Surge Panel.scripting" "Surge Panel" -x '*.DS_Store'
-zip -r -X "frp-manager.scripting" "frp-manager" -x '*.DS_Store'
-zip -r -X "cf-observability.scripting" "cf-observability" -x '*.DS_Store'
-```
-Keep all bundles in sync with their folders, and bump `version` in the script's `script.json` (plus a `changelog.md` entry) when packaging a release.
+### Distribution (no build step)
+- Scripts are imported straight from their GitHub folder URL (e.g. `https://github.com/bluenight91/Scripting-Scripts/tree/main/cf-observability`). Do **not** generate or commit `.scripting` zip bundles.
+- Each script's section in the root `README.md` (and its own `README.md`) carries a one-click import link: `https://www.scripting.fun/import_scripts/?urls=` + URL-encoded JSON array of folder URLs (spaces in the folder name are double-encoded, e.g. `Surge%2520Panel`). The official generator is <https://www.scripting.fun/import_scripts>.
+- When releasing, bump `version` in the script's `script.json` and add a `changelog.md` entry.

@@ -36,7 +36,7 @@ import { fetchDetail } from "../lib/usage"
 import { BARE_ROW, Card, ChipBar, EmptyState, HeroCard, IconBadge, LIST_STYLE, ListRow, MetricTile, SectionHeader, ValueText } from "../components/Kit"
 import { GradientBar } from "../components/GradientBar"
 import { HERO_DIM, HeroChip } from "../components/Quota"
-import { TONES, UI } from "../lib/theme"
+import { CF_YELLOW, TONES, UI } from "../lib/theme"
 import { LogsView } from "./LogsView"
 
 const STATUS_OK = ["#34C759", "#30B0C7"]
@@ -53,7 +53,7 @@ export function ProjectView({
   settings: Settings
   token: string
   isWidget: boolean
-  onSetWidget: () => void
+  onSetWidget: (on: boolean) => void
 }) {
   const [range, setRange] = useState<DetailRangeId>("24h")
   const [data, setData] = useState<DetailData | null>(null)
@@ -100,7 +100,7 @@ export function ProjectView({
     label: new Date(p.t),
     value: p.requests,
     unit: unit as "day" | "minute" | "hour",
-    foregroundStyle: "systemOrange",
+    foregroundStyle: CF_YELLOW,
     cornerRadius: 2,
   }))
   const chips = DETAIL_RANGES.map((r) => ({ id: r.id, title: r.id === "period" ? (settings.plan === "free" ? "今日" : "本周期") : r.title }))
@@ -151,25 +151,25 @@ export function ProjectView({
               tone="purple"
               title="CPU P50"
               value={formatMs(cpuP50)}
-              subtitle={`上限 ${formatMs(cpuLimit)} / 次`}
+              subtitle={`单次上限 ${formatMs(cpuLimit)}`}
             />
             <MetricTile
               icon="cpu.fill"
               tone={cpuP99 != null && cpuP99 > cpuLimit * 0.8 ? "red" : "pink"}
               title="CPU P99"
               value={formatMs(cpuP99)}
-              subtitle={cpuP99 == null ? "数据集不提供" : `占上限 ${formatPercent(cpuP99 / cpuLimit)}`}
+              subtitle={cpuP99 == null ? "暂无数据" : `占上限 ${formatPercent(cpuP99 / cpuLimit)}`}
               badge={cpuP99 != null && cpuP99 > cpuLimit ? "已超出单次上限" : undefined}
             />
           </HStack>
           <HStack spacing={10}>
-            <MetricTile icon="timer" tone="teal" title="Wall P99" value={formatMs(wallP99)} subtitle="含等待网络 / WebSocket 时长" />
+            <MetricTile icon="timer" tone="teal" title="Wall P99" value={formatMs(wallP99)} subtitle="含网络等待" />
             <MetricTile
               icon="arrow.triangle.branch"
               tone="blue"
               title="子请求"
               value={formatCount(t?.subrequests ?? null)}
-              subtitle={cpuTotalMs != null ? `CPU 合计 ${formatCount(Math.round(cpuTotalMs))} ms` : undefined}
+              subtitle={cpuTotalMs != null ? `CPU 合计 ${formatCount(Math.round(cpuTotalMs))} ms` : "CPU 合计 —"}
             />
           </HStack>
         </VStack>
@@ -236,15 +236,15 @@ export function ProjectView({
         ) : null}
         <Button
           action={() => {
-            onSetWidget()
-            setPinned(true)
+            onSetWidget(!pinned)
+            setPinned(!pinned)
           }}
         >
           <ListRow
-            icon="square.grid.2x2.fill"
-            tone="orange"
-            title={pinned ? "已设为小组件项目" : "设为小组件项目"}
-            subtitle="桌面 / 锁屏小组件显示该项目的限额使用"
+            icon={pinned ? "xmark.square.fill" : "square.grid.2x2.fill"}
+            tone={pinned ? "gray" : "orange"}
+            title={pinned ? "取消小组件项目" : "设为小组件项目"}
+            subtitle={pinned ? "当前小组件显示该项目；取消后显示账户总用量" : "桌面 / 锁屏小组件显示该项目的限额使用"}
             titleColor="label"
           />
         </Button>

@@ -55,6 +55,7 @@ export function SettingsView({
   const [checks, setChecks] = useState<PermissionCheck[] | null>(null)
   const [busy, setBusy] = useState<"accounts" | "check" | null>(null)
   const [widgetMsg, setWidgetMsg] = useState<string | null>(null)
+  const [widgetProject, setWidgetProject] = useState(initial.widgetProject)
 
   function effectiveToken(): string {
     return tokenDraft.trim() || getToken()
@@ -106,6 +107,7 @@ export function SettingsView({
         accountName: accountName.trim(),
         plan,
         cycleDay,
+        widgetProject,
       },
       tokenDraft.trim() ? tokenDraft.trim() : null
     )
@@ -247,7 +249,7 @@ export function SettingsView({
           header={<Text>小组件</Text>}
           footer={
             <Text font={13}>
-              小组件默认显示「设为小组件项目」选定的项目；编辑小组件时把 Parameter 填为项目名（可加 worker: / pages: 前缀）可覆盖，方便同时放多个小组件。留空且未选定项目时显示账户总用量。
+              未选定项目时小组件显示账户总用量（Workers / Pages 分布与用量最高的项目）。编辑小组件时把 Parameter 填为项目名（可加 worker: / pages: 前缀）或 account 可单独覆盖，方便同时放多个小组件。
             </Text>
           }
         >
@@ -255,8 +257,13 @@ export function SettingsView({
             icon="square.grid.2x2.fill"
             tone="orange"
             title="当前小组件项目"
-            value={initial.widgetProject ? initial.widgetProject.name : "账户总用量"}
+            value={widgetProject ? widgetProject.name : "账户总用量"}
           />
+          {widgetProject ? (
+            <Button action={() => setWidgetProject(null)}>
+              <ListRow icon="xmark.square.fill" tone="gray" title="取消小组件项目" subtitle="保存后小组件改为显示账户总用量" titleColor="label" />
+            </Button>
+          ) : null}
           <Button
             action={() => {
               Widget.reloadAll()

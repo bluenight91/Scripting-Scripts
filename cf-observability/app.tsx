@@ -1,4 +1,4 @@
-// Cloudflare 观测主界面：账户限额主卡片 + Worker / Pages 项目列表；设置在 sheet 中完成
+// Cloudflare Observability 主界面：账户限额主卡片 + Worker / Pages 项目列表；设置在 sheet 中完成
 import {
   Button,
   Group,
@@ -112,8 +112,11 @@ export function CfObservabilityApp() {
     setSettings(next)
   }
 
-  function setWidgetProject(p: Project | null) {
-    updateSettings({ ...settings, widgetProject: p })
+  /** 取消后小组件回到账户总用量；读 Storage 里的最新设置，详情页连续切换时不会拿到旧闭包 */
+  function setWidgetProject(p: Project, on: boolean) {
+    const cur = loadSettings()
+    const widgetProject = on ? p : sameProject(cur.widgetProject, p) ? null : cur.widgetProject
+    updateSettings({ ...cur, widgetProject })
     reloadWidgets()
   }
 
@@ -148,7 +151,7 @@ export function CfObservabilityApp() {
             settings={settings}
             token={token}
             isWidget={isWidget}
-            onSetWidget={() => setWidgetProject(p)}
+            onSetWidget={(on) => setWidgetProject(p, on)}
           />
         }
       >
@@ -158,12 +161,18 @@ export function CfObservabilityApp() {
           frame={{ maxWidth: "infinity", alignment: "leading" }}
           trailingSwipeActions={{
             allowsFullSwipe: true,
-            actions: [<Button title={isWidget ? "已在小组件" : "设为小组件"} tint="systemOrange" action={() => setWidgetProject(p)} />],
+            actions: [
+              <Button title={isWidget ? "取消小组件" : "设为小组件"} tint={isWidget ? "systemGray" : "systemOrange"} action={() => setWidgetProject(p, !isWidget)} />,
+            ],
           }}
           contextMenu={{
             menuItems: (
               <Group>
-                <Button title="设为小组件项目" systemImage="square.grid.2x2" action={() => setWidgetProject(p)} />
+                <Button
+                  title={isWidget ? "取消小组件项目" : "设为小组件项目"}
+                  systemImage={isWidget ? "xmark.square" : "square.grid.2x2"}
+                  action={() => setWidgetProject(p, !isWidget)}
+                />
               </Group>
             ),
           }}
@@ -172,7 +181,7 @@ export function CfObservabilityApp() {
           <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity", alignment: "leading" }}>
             <HStack spacing={6}>
               <Text font={16} fontWeight="semibold" lineLimit={1}>{p.name}</Text>
-              {isWidget ? <Tag text="小组件" tone="orange" /> : null}
+              {isWidget ? <Tag text="Widget" tone="orange" /> : null}
             </HStack>
             <Text font={12} fontDesign="rounded" monospacedDigit foregroundStyle="secondaryLabel" lineLimit={1}>
               {t
@@ -214,7 +223,7 @@ export function CfObservabilityApp() {
     >
       <List
         {...LIST_STYLE}
-        navigationTitle="Cloudflare 观测"
+        navigationTitle="Cloudflare"
         toolbar={toolbar}
         sheet={releaseNotes}
         refreshable={async () => { await load() }}
@@ -264,7 +273,7 @@ export function CfObservabilityApp() {
         {configured ? (
           <Section
             header={<Text>{`Workers · ${workers.length}`}</Text>}
-            footer={<Text font={13}>点按查看详情与日志；左滑或长按可设为小组件项目。</Text>}
+            footer={<Text font={13}>点按查看详情与日志；左滑或长按可设为 / 取消小组件项目，未选定时小组件显示账户总用量。</Text>}
           >
             {workers.length === 0 ? (
               <EmptyState icon="bolt.slash" title={loading ? "加载中…" : "没有 Worker"} />

@@ -68,10 +68,11 @@ export function saveCachedProjects(list: Project[]) {
   Storage.set(PROJECTS_KEY, list.map(({ kind, name, scriptName, modifiedOn, subtitle }) => ({ kind, name, scriptName, modifiedOn, subtitle })))
 }
 
-/** 小组件参数：项目名（可带 worker: / pages: 前缀）；找不到时按 Worker 名处理 */
+/** 小组件参数：项目名（可带 worker: / pages: 前缀）或 account；找不到时按 Worker 名处理 */
 export function resolveProject(param: string | null | undefined, fallback: Project | null): Project | null {
   const p = (param ?? "").trim()
   if (!p) return fallback
+  if (/^account$/i.test(p)) return null
   const m = /^(worker|pages):(.+)$/i.exec(p)
   const kind = m ? (m[1].toLowerCase() as Project["kind"]) : null
   const name = (m ? m[2] : p).trim()

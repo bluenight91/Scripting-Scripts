@@ -2,7 +2,7 @@
   "intentInputTypes" : [
 
   ],
-  "version" : "1.0.0",
+  "version" : "1.1.0",
   "iconImage" : "",
   "icon" : "cloud.fill",
   "author" : {
@@ -17,13 +17,13 @@
   "permissions" : null,
   "remoteResource" : null,
   "localizedNames" : {
-    "zh" : "Cloudflare 观测"
+
   },
-  "color" : "rgba(246, 130, 31, 1)",
+  "color" : "rgba(250, 173, 63, 1)",
   "localizedDescriptions" : {
-    "zh" : "Cloudflare Workers / Pages 观测：账户限额（Workers Free 每日 / Workers Paid 每月）、项目请求 / CPU / 错误分析、Workers Observability 日志查询，桌面与锁屏小组件显示选定项目的限额使用。"
+    "zh" : "Cloudflare Workers / Pages 观测：账户限额（Workers Free 每日 / Workers Paid 每月）、项目请求 / CPU / 错误分析、Workers Observability 日志查询，桌面与锁屏小组件显示账户或选定项目的限额使用。"
   },
   "name" : "Cloudflare Observability",
   "runInApp" : false,
-  "description" : "Cloudflare Workers / Pages observability: account quota (Workers Free daily / Workers Paid monthly), per-project requests / CPU / errors, Workers Observability log queries, and Home / Lock Screen widgets for the selected project's quota usage."
+  "description" : "Cloudflare Workers / Pages observability: account quota (Workers Free daily / Workers Paid monthly), per-project requests / CPU / errors, Workers Observability log queries, and Home / Lock Screen widgets for account or selected-project quota usage."
 }

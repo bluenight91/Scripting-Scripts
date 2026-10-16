@@ -18,7 +18,7 @@
 
 ## 使用
 
-1. **导入脚本**：下载仓库根目录的 [`frp-manager.scripting`](../frp-manager.scripting) 用 Scripting 打开；或在 Scripting 中用「GitHub 文件夹链接导入」粘贴本目录（`frp-manager/`）的 GitHub 树链接；或把整个 `frp-manager` 目录放入 Scripting 的脚本目录。
+1. **导入脚本**：[一键导入](https://www.scripting.fun/import_scripts/?urls=%5B%22https%3A%2F%2Fgithub.com%2Fbluenight91%2FScripting-Scripts%2Ftree%2Fmain%2Ffrp-manager%22%5D)；或在 Scripting 中填入本目录的 GitHub 链接 `https://github.com/bluenight91/Scripting-Scripts/tree/main/frp-manager`；或把整个 `frp-manager` 目录放入 Scripting 的脚本目录。
 2. **开启 frp Admin API**：
    - frpc：配置文件中加入 `webServer.addr` / `webServer.port`（如 `127.0.0.1:6080`），可选 `webServer.user` / `webServer.password`；动态代理还需要 `store.path`。
    - frps：加入 `webServer.addr` / `webServer.port`（dashboard 端口，如 `7500`），可选 `webServer.user` / `webServer.password`。
