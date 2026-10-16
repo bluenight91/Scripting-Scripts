@@ -86,3 +86,5 @@ export const HERO_GRADIENT = gradient("linear", {
   startPoint: "topLeading",
   endPoint: "bottomTrailing",
 })
+
+export const HERO_SHADOW = { color: "rgba(47,80,220,0.28)" as Color, radius: 18, x: 0, y: 8 }

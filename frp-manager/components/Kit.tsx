@@ -10,7 +10,7 @@ import {
   VStack,
   type Color,
 } from "scripting"
-import { cardBackground, controlSurface, HERO_GRADIENT, PAGE_BACKDROP, roundedShape, TONES, UI, type Tone } from "../lib/theme"
+import { cardBackground, controlSurface, HERO_GRADIENT, HERO_SHADOW, PAGE_BACKDROP, roundedShape, TONES, UI, type Tone } from "../lib/theme"
 
 export function Card({
   children,
@@ -48,7 +48,7 @@ export function HeroCard({ children, onTap }: { children: any; onTap?: () => voi
       padding={18}
       frame={{ maxWidth: "infinity", alignment: "leading" }}
       background={{ style: HERO_GRADIENT, shape: roundedShape(26) }}
-      shadow={{ color: "rgba(47,80,220,0.28)", radius: 18, x: 0, y: 8 }}
+      shadow={HERO_SHADOW}
       foregroundStyle="white"
       contentShape={roundedShape(26)}
       onTapGesture={onTap}

@@ -88,6 +88,8 @@ export const HERO_GRADIENT = gradient("linear", {
   endPoint: "bottomTrailing",
 })
 
+export const HERO_SHADOW = { color: "rgba(47,80,220,0.28)" as Color, radius: 18, x: 0, y: 8 }
+
 export const CONNECT_HINT = "请到「设置 → 实例」检查地址与 Key"
 export const METRICS_HINT = "内存与封禁需 Surge iOS 5.22+ 或 Mac 6.9+（商店版 / Mac 6.8 尚无 /metrics）"
 
