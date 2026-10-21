@@ -12,8 +12,20 @@ A collection of scripts for the iOS [Scripting](https://scriptingapp.github.io) 
 - Surge Panel tabs are addressed by `TabId` (`"dashboard" | "routing" | "activity" | "settings"`, ordered by `TAB_ORDER` in `lib/store.ts`), never by numeric index. Use `openActivity(segment)` to jump to the Activity tab.
 
 ### Environment / dependencies
-- There is **no `package.json`, lockfile, `tsconfig.json`, test framework, or lint config**. Nothing needs to be installed; `node` (v22+) is preinstalled and is all that's used here. The startup update script is a no-op runtime check.
-- Do **not** add a build/test toolchain unless asked — this project is edited as plain source and packaged as a zip.
+- There is **no `package.json`, lockfile, `tsconfig.json`, test framework, or lint config** in the repo. Do **not** add a build/test toolchain unless asked — this project is edited as plain source and imported from GitHub folders.
+- Cloud Agent `install` caches host tools under `/usr/local` and `/opt/scripting` (not in the repo):
+  - `node` 22+ (required; `scripting-cli` needs Node 20+)
+  - `scripting-cli` (official desktop ↔ Scripting App sync CLI)
+  - `esbuild` (TSX/TS syntax checks without adding repo tooling)
+  - Official development skill mirror: `/opt/scripting/scripting-app-development` ([ScriptingApp/scripting-app-development](https://github.com/ScriptingApp/scripting-app-development))
+  - Official LLM docs index cache: `/opt/scripting/llms.txt` (live source: <https://scriptingapp.github.io/llms.txt>)
+- There is no `start` service. Do **not** auto-run `scripting-cli start` on boot — it needs an interactive editor choice and a reachable Scripting App on the same LAN (or a tunnel). Cloud VMs normally cannot reach the user's iPhone.
+
+### Scripting API / skill workflow
+Before changing Scripting-specific APIs or entry points, follow the official skill:
+1. Read `/opt/scripting/scripting-app-development/SKILL.md` and the matching file under `references/` / `checklists/`.
+2. Look up the exact API in `/opt/scripting/llms.txt` (or the live index) and open the linked guide page — do not invent APIs from Swift/React memory.
+3. If `scripting-cli` has already synced app `.d.ts` files into the workspace, use those for exact signatures **together with** the docs for permissions and host constraints.
 
 ### Running / testing (Linux limitations)
 - The apps **cannot run on Linux**: almost every file imports from `"scripting"` (an iOS-only runtime), so they can't be executed or fully type-checked without the device.
@@ -21,8 +33,16 @@ A collection of scripts for the iOS [Scripting](https://scriptingapp.github.io) 
   ```bash
   node --experimental-strip-types your_harness.ts   # import from "Surge Panel/lib/metrics.ts"
   ```
-- For a syntax check of TSX without adding tooling to the repo, install esbuild in a temp directory (e.g. `/tmp`) and run `esbuild --loader:.tsx=tsx` over the files.
-- Real end-to-end testing requires the iOS Scripting app plus a reachable Surge instance (HTTP API + Prometheus Metrics Endpoint), frp instance (admin / dashboard port) or a Cloudflare user API token (see `cf-observability/README.md` for required permissions). This can't be done from the cloud VM.
+- TSX/TS syntax check (already on PATH after install):
+  ```bash
+  esbuild --bundle=false --outdir=/tmp/esbuild-check --loader:.tsx=tsx --loader:.ts=ts "Surge Panel/index.tsx"
+  ```
+- Desktop live sync (when the user has Scripting App reachable, typically on their own machine — not assumed in Cloud Agents):
+  ```bash
+  scripting-cli start --editor=none --no-auto-open
+  ```
+  After the app connects and selects a project, search the synced `.d.ts` files for API signatures. Keep CLI sync evidence separate from Widget / Intent / notification / Live Activity / Safari host E2E.
+- Real end-to-end testing requires the iOS Scripting app plus a reachable Surge instance (HTTP API + Prometheus Metrics Endpoint), frp instance (admin / dashboard port) or a Cloudflare user API token (see `cf-observability/README.md` for required permissions). This can't be done from the cloud VM alone.
 
 ### Distribution (no build step)
 - Scripts are imported straight from their GitHub folder URL (e.g. `https://github.com/bluenight91/Scripting-Scripts/tree/main/cf-observability`). Do **not** generate or commit `.scripting` zip bundles.
