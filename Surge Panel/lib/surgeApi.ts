@@ -1,6 +1,6 @@
-// Surge HTTP API 封装（端点文档：https://manual.nssurge.com/others/http-api.html）
+// Surge HTTP API 封装（端点文档：https://manual.nssurge.com/tools/http-api.html）
 import { fetch } from "scripting"
-import { hostForUrl } from "./connection"
+import { classifyTransportFailure, hostForUrl, shouldTryAlternateProtocol } from "./connection"
 import {
   buildPolicyLatencyScript,
   chunk,
@@ -8,6 +8,7 @@ import {
   parseExternalPolicies,
   parsePolicyLatencyResults,
   parsePrometheus,
+  normalizePolicyGroups,
   uptimeSecondsFromStartTime,
   type ExternalPolicy,
   type MetricSample,
@@ -81,26 +82,8 @@ function httpStatusError(status: number): SurgeApiError {
 
 function wrapFetchError(e: unknown): SurgeApiError {
   if (e instanceof SurgeApiError) return e
-  const s = String(e)
-  if (/wrong version|unexpected.*response|SSL.*record|plain HTTP|protocol error/i.test(s)) {
-    return new SurgeApiError("protocol", "HTTP/HTTPS 协议可能与 Surge 的 http-api-tls 设置不一致")
-  }
-  if (/TLS|TlsHandler|证书|certificate/i.test(s)) {
-    return new SurgeApiError(
-      "tls",
-      "HTTPS 证书验证失败。请在本机安装并信任 Surge MITM CA，并确认访问地址与证书匹配"
-    )
-  }
-  if (/401|unauthorized/i.test(s)) {
-    return new SurgeApiError("auth", "API Key 无效或没有访问权限")
-  }
-  if (/timeout|timed?\s*out|ETIMEDOUT|超时/i.test(s)) {
-    return new SurgeApiError("timeout", "连接超时")
-  }
-  if (/ECONNREFUSED|connection refused|无法连接|拒绝连接/i.test(s)) {
-    return new SurgeApiError("refused", "连接被拒绝")
-  }
-  return new SurgeApiError("network", e instanceof Error ? e.message : s)
+  const failure = classifyTransportFailure(e)
+  return new SurgeApiError(failure.kind, failure.message)
 }
 
 /** 400 时 Surge 会在 body 里说明原因（未知资源 key、非法 IP 等） */
@@ -120,6 +103,150 @@ export function urlOf(c: SurgeConfig, path: string): string {
   return `${c.protocol}://${hostForUrl(c.host)}${portPart}${path}`
 }
 
+function apiHeaders(c: SurgeConfig, jsonBody: boolean): Record<string, string> {
+  return {
+    "X-Key": c.key.trim(),
+    // 手册示例带 Accept。不要设置 Connection：Fetch 会拒绝这个被禁止的头，请求还没发出去就失败。
+    Accept: "*/*",
+    ...(jsonBody ? { "Content-Type": "application/json" } : {}),
+  }
+}
+
+function endpointKey(c: SurgeConfig): string {
+  return `${normalizeEndpointHost(c.host)}|${c.port.trim()}|${c.key}`
+}
+
+function normalizeEndpointHost(host: string): string {
+  return host.trim().toLowerCase()
+}
+
+// 同一地址上，明文失败但 TLS 有响应（或反过来）时记住可用协议，避免每次都先撞一次拒绝连接。
+const preferredProtocol = new Map<string, "http" | "https">()
+const savedProtocolSeen = new Map<string, "http" | "https">()
+const alternateBlockedUntil = new Map<string, number>()
+const metricsSkipUntil = new Map<string, number>()
+
+function noteSavedProtocol(c: SurgeConfig) {
+  const key = endpointKey(c)
+  const seen = savedProtocolSeen.get(key)
+  // 用户在实例里改了协议后，丢掉自动探测结果，按新选择再试。
+  if (seen && seen !== c.protocol) {
+    preferredProtocol.delete(key)
+    alternateBlockedUntil.delete(key)
+    metricsSkipUntil.delete(key)
+  }
+  savedProtocolSeen.set(key, c.protocol)
+}
+
+export function protocolOverrideFor(c: SurgeConfig): "http" | "https" | null {
+  noteSavedProtocol(c)
+  const preferred = preferredProtocol.get(endpointKey(c))
+  if (!preferred || preferred === c.protocol) return null
+  return preferred
+}
+
+function effectiveConfig(c: SurgeConfig): SurgeConfig {
+  noteSavedProtocol(c)
+  const preferred = preferredProtocol.get(endpointKey(c))
+  return preferred && preferred !== c.protocol ? { ...c, protocol: preferred } : c
+}
+
+function otherProtocol(protocol: "http" | "https"): "http" | "https" {
+  return protocol === "http" ? "https" : "http"
+}
+
+function connectFailureKind(kind: string): boolean {
+  return kind === "refused" || kind === "protocol" || kind === "tls" || kind === "network"
+}
+
+// Surge iOS 6 / Mac 6.11 的 HTTP API 同时只稳定接受少量连接，并行打过去会被直接拒绝。
+let requestChain: Promise<unknown> = Promise.resolve()
+
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const run = requestChain.then(task, task)
+  requestChain = run.then(
+    () => undefined,
+    () => undefined
+  )
+  return run
+}
+
+async function fetchOnce(
+  c: SurgeConfig,
+  path: string,
+  init: { method: "GET" | "POST"; body?: string; timeoutSec: number; label: string }
+): Promise<Awaited<ReturnType<typeof fetch>>> {
+  return fetch(urlOf(c, path), {
+    method: init.method,
+    headers: apiHeaders(c, init.body !== undefined),
+    body: init.body,
+    timeout: init.timeoutSec,
+    allowInsecureRequest: allowInsecure(c),
+    debugLabel: init.label,
+  })
+}
+
+async function fetchWithRetry(
+  c: SurgeConfig,
+  path: string,
+  init: { method: "GET" | "POST"; body?: string; timeoutSec: number; label: string }
+): Promise<Awaited<ReturnType<typeof fetch>>> {
+  try {
+    return await fetchOnce(c, path, init)
+  } catch (error) {
+    const failure = classifyTransportFailure(error)
+    if (failure.kind !== "refused") throw wrapFetchError(error)
+    try {
+      return await fetchOnce(c, path, init)
+    } catch (retryError) {
+      throw wrapFetchError(retryError)
+    }
+  }
+}
+
+/**
+ * 先按实例里保存的协议请求。若端口直接拒绝或握手失败，再用另一种协议试一次：
+ * Surge 打开 http-api-tls 后，明文请求会被重置，URLSession 只报 Could not connect to the server。
+ */
+async function surgeFetch(
+  c: SurgeConfig,
+  path: string,
+  init: { method: "GET" | "POST"; body?: string; timeoutSec: number; label: string }
+): Promise<Awaited<ReturnType<typeof fetch>>> {
+  return enqueue(() => surgeFetchQueued(c, path, init))
+}
+
+async function surgeFetchQueued(
+  c: SurgeConfig,
+  path: string,
+  init: { method: "GET" | "POST"; body?: string; timeoutSec: number; label: string }
+): Promise<Awaited<ReturnType<typeof fetch>>> {
+  const primary = effectiveConfig(c)
+  try {
+    return await fetchWithRetry(primary, path, init)
+  } catch (error) {
+    const failure = error instanceof SurgeApiError ? error : wrapFetchError(error)
+    const key = endpointKey(c)
+    const blocked = (alternateBlockedUntil.get(key) ?? 0) > Date.now()
+    if (!shouldTryAlternateProtocol(failure.kind) || blocked) throw failure
+    const alt: SurgeConfig = { ...primary, protocol: otherProtocol(primary.protocol) }
+    try {
+      const res = await fetchWithRetry(alt, path, init)
+      preferredProtocol.set(key, alt.protocol)
+      alternateBlockedUntil.delete(key)
+      return res
+    } catch (altError) {
+      const altFailure = altError instanceof SurgeApiError ? altError : wrapFetchError(altError)
+      alternateBlockedUntil.set(key, Date.now() + 30_000)
+      if (altFailure.kind === "tls" || altFailure.kind === "auth") {
+        preferredProtocol.set(key, alt.protocol)
+        throw altFailure
+      }
+      throw failure
+    }
+  }
+}
+
 async function request<T>(
   c: SurgeConfig,
   method: "GET" | "POST",
@@ -127,27 +254,26 @@ async function request<T>(
   body?: unknown,
   timeoutSec = 30
 ): Promise<T> {
-  const res = await fetch(urlOf(c, path), {
+  const res = await surgeFetch(c, path, {
     method,
-    headers: {
-      "X-Key": c.key,
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-    },
     body: body !== undefined ? JSON.stringify(body) : undefined,
-    timeout: timeoutSec,
-    allowInsecureRequest: allowInsecure(c),
-    debugLabel: `surge-panel ${method} ${path}`,
-  }).catch((e) => {
-    throw wrapFetchError(e)
+    timeoutSec,
+    label: `surge-panel ${method} ${path}`,
   })
   if (!res.ok) {
-    const body = await res.text().then((t: string) => t.trim().slice(0, 300)).catch(() => "")
+    const text = await res.text().then((t: string) => t.trim().slice(0, 300)).catch(() => "")
     if (res.status === 400) {
-      const detail = badRequestDetail(body)
-      if (detail) throw new SurgeApiError("http", detail, 400, body)
+      const detail = badRequestDetail(text)
+      if (detail) {
+        const transport = classifyTransportFailure(detail)
+        if (transport.kind === "refused" || transport.kind === "tls" || transport.kind === "protocol") {
+          throw new SurgeApiError(transport.kind, transport.message, 400, text)
+        }
+        throw new SurgeApiError("http", detail, 400, text)
+      }
     }
     const err = httpStatusError(res.status)
-    err.body = body || undefined
+    err.body = text || undefined
     throw err
   }
   const text = await res.text()
@@ -170,13 +296,10 @@ function post<T>(c: SurgeConfig, path: string, body?: unknown, timeoutSec?: numb
 
 /** iOS 5.22+ / Mac 6.9+；商店版与 Mac 6.8 返回 404。没有端点时返回 null，不视为连接失败。 */
 export async function fetchMetrics(c: SurgeConfig): Promise<MetricSample[] | null> {
-  const res = await fetch(urlOf(c, "/v1/metrics"), {
-    headers: { "X-Key": c.key },
-    timeout: 15,
-    allowInsecureRequest: allowInsecure(c),
-    debugLabel: "surge-panel metrics",
-  }).catch((e) => {
-    throw wrapFetchError(e)
+  const res = await surgeFetch(c, "/v1/metrics", {
+    method: "GET",
+    timeoutSec: 15,
+    label: "surge-panel metrics",
   })
   if (res.status === 404 || res.status === 405 || res.status === 501) return null
   if (!res.ok) throw httpStatusError(res.status)
@@ -268,16 +391,29 @@ export type DnsEntry = {
 
 // ---------- 请求与事件 ----------
 
-export const getActiveRequests = (c: SurgeConfig) =>
-  get<{ requests: SurgeRequest[] }>(c, "/v1/requests/active")
+function asRecordList<T>(raw: unknown, key: string): T[] {
+  if (Array.isArray(raw)) return raw as T[]
+  if (raw && typeof raw === "object") {
+    const list = (raw as Record<string, unknown>)[key]
+    if (Array.isArray(list)) return list as T[]
+  }
+  return []
+}
 
-export const getRecentRequests = (c: SurgeConfig) =>
-  get<{ requests: SurgeRequest[] }>(c, "/v1/requests/recent")
+export async function getActiveRequests(c: SurgeConfig): Promise<{ requests: SurgeRequest[] }> {
+  return { requests: asRecordList<SurgeRequest>(await get<unknown>(c, "/v1/requests/active"), "requests") }
+}
+
+export async function getRecentRequests(c: SurgeConfig): Promise<{ requests: SurgeRequest[] }> {
+  return { requests: asRecordList<SurgeRequest>(await get<unknown>(c, "/v1/requests/recent"), "requests") }
+}
 
 export const killRequest = (c: SurgeConfig, id: number) =>
   post<void>(c, "/v1/requests/kill", { id })
 
-export const getEvents = (c: SurgeConfig) => get<{ events: SurgeEvent[] }>(c, "/v1/events")
+export async function getEvents(c: SurgeConfig): Promise<{ events: SurgeEvent[] }> {
+  return { events: asRecordList<SurgeEvent>(await get<unknown>(c, "/v1/events"), "events") }
+}
 
 // ---------- 策略 ----------
 
@@ -335,8 +471,9 @@ export type PolicyBenchmarkResult = {
 export const getPolicyBenchmarks = (c: SurgeConfig) =>
   get<Record<string, PolicyBenchmarkResult>>(c, "/v1/policies/benchmark_results")
 
-export const getPolicyGroups = (c: SurgeConfig) =>
-  get<Record<string, PolicyOption[]>>(c, "/v1/policy_groups")
+export async function getPolicyGroups(c: SurgeConfig): Promise<Record<string, PolicyOption[]>> {
+  return normalizePolicyGroups(await get<unknown>(c, "/v1/policy_groups"))
+}
 
 export const getPolicyGroupSelection = (c: SurgeConfig, groupName: string) =>
   get<{ policy: string }>(c, `/v1/policy_groups/select?group_name=${encodeURIComponent(groupName)}`)
@@ -388,14 +525,10 @@ function headerGet(headers: unknown, name: string): string | undefined {
 /** 连通性探针：读 /v1/outbound，尽量带上版本头 */
 export async function probeOutbound(c: SurgeConfig): Promise<ProbeResult> {
   const t0 = Date.now()
-  const res = await fetch(urlOf(c, "/v1/outbound"), {
+  const res = await surgeFetch(c, "/v1/outbound", {
     method: "GET",
-    headers: { "X-Key": c.key },
-    timeout: 10,
-    allowInsecureRequest: allowInsecure(c),
-    debugLabel: "surge-panel probe",
-  }).catch((e) => {
-    throw wrapFetchError(e)
+    timeoutSec: 10,
+    label: "surge-panel probe",
   })
   const latencyMs = Date.now() - t0
   if (!res.ok) {
@@ -457,8 +590,14 @@ export const getTraffic = (c: SurgeConfig) => get<TrafficSnapshot>(c, "/v1/traff
 
 // ---------- 规则 ----------
 
-export const getRules = (c: SurgeConfig) =>
-  get<{ rules: string[]; "available-policies": string[] }>(c, "/v1/rules")
+export async function getRules(
+  c: SurgeConfig
+): Promise<{ rules: string[]; "available-policies": string[] }> {
+  const r = await get<{ rules?: unknown; "available-policies"?: unknown } | undefined>(c, "/v1/rules")
+  const rules = Array.isArray(r?.rules) ? r.rules.map(String) : []
+  const policies = Array.isArray(r?.["available-policies"]) ? r["available-policies"].map(String) : []
+  return { rules, "available-policies": policies }
+}
 
 // ---------- 脚本 ----------
 
@@ -769,9 +908,21 @@ export async function fetchOverviewSamples(
   c: SurgeConfig,
   opts?: { skipMetrics?: boolean; traffic?: TrafficSnapshot | null }
 ): Promise<{ samples: MetricSample[]; fromMetrics: boolean }> {
-  if (!opts?.skipMetrics) {
-    const metrics = await fetchMetrics(c)
-    if (metrics) return { samples: metrics, fromMetrics: true }
+  const skipMetrics = opts?.skipMetrics || (metricsSkipUntil.get(endpointKey(c)) ?? 0) > Date.now()
+  if (!skipMetrics) {
+    try {
+      const metrics = await fetchMetrics(c)
+      if (metrics) return { samples: metrics, fromMetrics: true }
+    } catch (error) {
+      if (surgeApiErrorKind(error) === "auth") throw error
+      // /v1/metrics 在部分新构建上会直接重置连接。这次改走 HTTP API，并暂停再打 metrics，
+      // 否则每一次轮询都先把监听打断，出站模式和流量会一起显示成连不上。
+      if (connectFailureKind(surgeApiErrorKind(error))) {
+        metricsSkipUntil.set(endpointKey(c), Date.now() + 60_000)
+      } else {
+        throw error
+      }
+    }
   }
   return { samples: await fallbackOverviewSamples(c, opts?.traffic), fromMetrics: false }
 }

@@ -553,6 +553,47 @@ function toExternalPolicy(raw: unknown, groupHint?: string): ExternalPolicy | nu
  * GET /v1/policies?include_external=true 的 external-policies（字段名尚无文档，宽松解析）。
  * 字段缺失（旧版 Surge 忽略该参数）返回 null；兼容数组与「组名 → 数组」两种形状。
  */
+export type PolicyGroupOption = {
+  isGroup: boolean
+  name: string
+  typeDescription: string
+  lineHash: string
+  enabled: boolean
+}
+
+function asPolicyGroupOption(raw: unknown): PolicyGroupOption | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null
+  const o = raw as Record<string, unknown>
+  if (typeof o.name !== "string" || !o.name) return null
+  return {
+    name: o.name,
+    isGroup: o.isGroup === true,
+    typeDescription: typeof o.typeDescription === "string" ? o.typeDescription : "",
+    lineHash: typeof o.lineHash === "string" ? o.lineHash : "",
+    enabled: o.enabled !== false,
+  }
+}
+
+/**
+ * GET /v1/policy_groups。iOS 6 / Mac 6.11 会在同一层带上自动组回避等信息，
+ * 那些字段不是「组名 → 节点数组」，不能当成策略组。
+ */
+export function normalizePolicyGroups(raw: unknown): Record<string, PolicyGroupOption[]> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
+  const out: Record<string, PolicyGroupOption[]> = {}
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(value)) continue
+    const options: PolicyGroupOption[] = []
+    for (const item of value) {
+      const option = asPolicyGroupOption(item)
+      if (option) options.push(option)
+    }
+    if (options.length === 0 && value.length > 0) continue
+    out[name] = options
+  }
+  return out
+}
+
 export function parseExternalPolicies(body: unknown): ExternalPolicy[] | null {
   if (!body || typeof body !== "object") return null
   const o = body as Record<string, unknown>

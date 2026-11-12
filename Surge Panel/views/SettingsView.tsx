@@ -27,6 +27,7 @@ import {
   parseProfileSections,
   reloadProfile,
   setFeature,
+  surgeApiErrorMessage,
   setLogLevel as setSurgeLogLevel,
   setModule,
   setOutboundGlobal,
@@ -135,7 +136,7 @@ export function SettingsView() {
           .catch(() => {})
       }
     } catch (e) {
-      setEngineError(String(e))
+      setEngineError(surgeApiErrorMessage(e))
     }
   }
 
@@ -152,7 +153,7 @@ export function SettingsView() {
         getRules(config).then((r) => setPolicyChoices(r["available-policies"] ?? [])).catch(() => {})
       }
     } catch (e) {
-      setEngineError(String(e))
+      setEngineError(surgeApiErrorMessage(e))
     }
   }
 
@@ -161,7 +162,7 @@ export function SettingsView() {
     try {
       await setOutboundGlobal(config, policy)
     } catch (e) {
-      setEngineError(String(e))
+      setEngineError(surgeApiErrorMessage(e))
     }
   }
 
@@ -171,7 +172,7 @@ export function SettingsView() {
       await setSurgeLogLevel(config, level)
       setActionMsg(`日志级别已切换为 ${level}（仅当前会话有效）`)
     } catch (e) {
-      setEngineError(String(e))
+      setEngineError(surgeApiErrorMessage(e))
     }
   }
 
@@ -180,7 +181,7 @@ export function SettingsView() {
     try {
       await setFeature(config, k, v)
     } catch (e) {
-      setEngineError(String(e))
+      setEngineError(surgeApiErrorMessage(e))
       loadEngineState()
     }
   }
@@ -406,7 +407,7 @@ function ModulesView() {
       setModules(await getModules(config))
       setError(null)
     } catch (e) {
-      setError(String(e))
+      setError(surgeApiErrorMessage(e))
     }
   }
 
@@ -426,7 +427,7 @@ function ModulesView() {
     try {
       await setModule(config, name, v)
     } catch (e) {
-      setError(String(e))
+      setError(surgeApiErrorMessage(e))
       void load()
     }
   }
@@ -570,7 +571,7 @@ function ProfileView() {
     setProfile(null)
     getCurrentProfile(config, sensitive)
       .then((r) => setProfile(typeof r === "string" ? r : r.profile ?? ""))
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(surgeApiErrorMessage(e)))
   }, [config, sensitive])
 
   const sections = profile ? parseProfileSections(profile) : []
