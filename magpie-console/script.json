@@ -1,0 +1,29 @@
+{
+  "intentInputTypes" : [
+
+  ],
+  "version" : "1.0.0",
+  "iconImage" : "",
+  "icon" : "bird.fill",
+  "author" : {
+    "homepage" : null,
+    "email" : null,
+    "name" : "Daniel"
+  },
+  "entry" : "index.tsx",
+  "contributors" : [
+
+  ],
+  "permissions" : null,
+  "remoteResource" : null,
+  "localizedNames" : {
+    "zh" : "magpie 控制台"
+  },
+  "color" : "rgba(79, 142, 247, 1)",
+  "localizedDescriptions" : {
+    "zh" : "magpie 网关控制台：多网关书签、供应商与模型目录、路由组备注与重命名、网关密钥增删改停用轮换与限额查看、接入片段与自检诊断。"
+  },
+  "name" : "magpie Console",
+  "runInApp" : false,
+  "description" : "A native console for a magpie local gateway: gateway bookmarks, providers and model catalog, routing-group notes and rename, gateway keys with limits, connect snippets and diagnostics."
+}

@@ -3,11 +3,11 @@
 ## Cursor Cloud specific instructions
 
 ### What this repo is
-A collection of scripts for the iOS [Scripting](https://scriptingapp.github.io) app, written in TypeScript/TSX. Three scripts live here: `Surge Panel/` (a Surge monitoring panel), `frp-manager/` (an frp Admin API manager) and `cf-observability/` (Cloudflare Workers / Pages usage, analytics and Workers Logs, plus a home/lock screen widget in `widget.tsx`). UI is built from the `scripting` runtime module (SwiftUI-backed views/hooks like `VStack`, `TabView`, `useObservable`), which exists **only inside the iOS Scripting app**.
+A collection of scripts for the iOS [Scripting](https://scriptingapp.github.io) app, written in TypeScript/TSX. Four scripts live here: `Surge Panel/` (a Surge monitoring panel), `frp-manager/` (an frp Admin API manager), `cf-observability/` (Cloudflare Workers / Pages usage, analytics and Workers Logs, plus a home/lock screen widget in `widget.tsx`) and `magpie-console/` (a magpie local-gateway console: providers, model catalog, routing groups and gateway keys). UI is built from the `scripting` runtime module (SwiftUI-backed views/hooks like `VStack`, `TabView`, `useObservable`), which exists **only inside the iOS Scripting app**.
 
 ### Shared design system
-- All scripts use the same visual language. Design tokens live in `Surge Panel/lib/ui.ts`, `frp-manager/lib/theme.ts` and `cf-observability/lib/theme.ts`, and components live in `components/Kit.tsx` in each script (`Card`, `HeroCard`, `MetricTile`, `ChipBar`, `ListRow`, `StatusPill`, `Tag`, `LIST_STYLE`, `BARE_ROW`, …).
-- The three `Kit.tsx` files are intentionally identical apart from the token import path (`../lib/ui` vs `../lib/theme`) because each script is packaged standalone. Keep them in sync when you change any one.
+- All scripts use the same visual language. Design tokens live in `Surge Panel/lib/ui.ts`, `frp-manager/lib/theme.ts`, `cf-observability/lib/theme.ts` and `magpie-console/lib/theme.ts`, and components live in `components/Kit.tsx` in each script (`Card`, `HeroCard`, `MetricTile`, `ChipBar`, `ListRow`, `StatusPill`, `Tag`, `LIST_STYLE`, `BARE_ROW`, …).
+- The four `Kit.tsx` files are intentionally identical apart from the token import path (`../lib/ui` vs `../lib/theme`) because each script is packaged standalone. Keep them in sync when you change any one.
 - Liquid Glass (`glassEffect`, `buttonStyle="glass"`) is only used on floating controls and is gated by `IS_GLASS` (iOS 26+); older systems fall back to `thinMaterial`. Content cards use opaque grouped backgrounds.
 - Surge Panel tabs are addressed by `TabId` (`"dashboard" | "routing" | "activity" | "settings"`, ordered by `TAB_ORDER` in `lib/store.ts`), never by numeric index. Use `openActivity(segment)` to jump to the Activity tab.
 
@@ -29,7 +29,7 @@ Before changing Scripting-specific APIs or entry points, follow the official ski
 
 ### Running / testing (Linux limitations)
 - The apps **cannot run on Linux**: almost every file imports from `"scripting"` (an iOS-only runtime), so they can't be executed or fully type-checked without the device.
-- OS-agnostic modules: `Surge Panel/lib/metrics.ts` (Prometheus parsing, formatters, `downsample`), `frp-manager/lib/frpCore.ts` (request building, error parsing, `formatBytes` / `splitBytes`) and `cf-observability/lib/cfCore.ts` (plan limits, billing periods, GraphQL / telemetry query builders and parsers, formatters). Run/verify them on Linux with Node's built-in TS stripping, e.g.:
+- OS-agnostic modules: `Surge Panel/lib/metrics.ts` (Prometheus parsing, formatters, `downsample`), `frp-manager/lib/frpCore.ts` (request building, error parsing, `formatBytes` / `splitBytes`), `cf-observability/lib/cfCore.ts` (plan limits, billing periods, GraphQL / telemetry query builders and parsers, formatters) and `magpie-console/lib/format.ts` (token / cost formatters, key limit periods and reset labels). Run/verify them on Linux with Node's built-in TS stripping, e.g.:
   ```bash
   node --experimental-strip-types your_harness.ts   # import from "Surge Panel/lib/metrics.ts"
   ```
@@ -42,7 +42,7 @@ Before changing Scripting-specific APIs or entry points, follow the official ski
   scripting-cli start --editor=none --no-auto-open
   ```
   After the app connects and selects a project, search the synced `.d.ts` files for API signatures. Keep CLI sync evidence separate from Widget / Intent / notification / Live Activity / Safari host E2E.
-- Real end-to-end testing requires the iOS Scripting app plus a reachable Surge instance (HTTP API + Prometheus Metrics Endpoint), frp instance (admin / dashboard port) or a Cloudflare user API token (see `cf-observability/README.md` for required permissions). This can't be done from the cloud VM alone.
+- Real end-to-end testing requires the iOS Scripting app plus a reachable Surge instance (HTTP API + Prometheus Metrics Endpoint), frp instance (admin / dashboard port), Cloudflare user API token (see `cf-observability/README.md` for required permissions) or a magpie gateway shared on the LAN with an admin gateway key. This can't be done from the cloud VM alone.
 
 ### Distribution (no build step)
 - Scripts are imported straight from their GitHub folder URL (e.g. `https://github.com/bluenight91/Scripting-Scripts/tree/main/cf-observability`). Do **not** generate or commit `.scripting` zip bundles.

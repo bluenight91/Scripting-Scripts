@@ -41,8 +41,19 @@ Cloudflare Workers / Pages 观测面板：账户级请求额度（Workers Free �
 
 详见 [Cloudflare Observability README](./cf-observability/README.md)。
 
+## magpie Console 1.0
+
+magpie 本地 AI 网关控制台：多网关书签、供应商与模型目录、路由组备注与重命名、网关密钥管理（含限额进度与重置倒计时）、接入片段与自检诊断。只做控制台，不做对话；与其它脚本共用同一套视觉语言。
+
+- 目录：[magpie-console](./magpie-console/)
+- [一键导入](https://www.scripting.fun/import_scripts/?urls=%5B%22https%3A%2F%2Fgithub.com%2Fbluenight91%2FScripting-Scripts%2Ftree%2Fmain%2Fmagpie-console%22%5D)
+- 更新说明：[changelog.md](./magpie-console/changelog.md)
+
+在 magpie 打开「网络与共享 → 在局域网共享」，然后在 Mac 上用 `magpie gateway-key add "iPhone"` 创建密钥、`magpie gateway-key admin <id> any` 授予管理权限；手机填 Mac 的局域网或 Tailscale 地址（默认端口 3425）。手机不能用 `127.0.0.1`。详见 [magpie Console README](./magpie-console/README.md)。
+
 # 感谢
 
 - [yasd](https://github.com/geekdada/yasd) 总览速率采样与流量分层对齐其 Web Dashboard
+- [magpie](https://usemagpie.ai) 管理 API 与网关
 - [Surge HTTP API](https://manual.nssurge.com/tools/http-api.html)
 - [Scripting](https://scriptingapp.github.io/zh/index)
