@@ -1,3 +1,9 @@
+## 本次更新（1.0.1）
+
+- 修复启动报错 `undefined is not an object (evaluating 'scripting_1.Storage.get')`：`Storage`、`Keychain`、`Pasteboard` 是 Scripting 的全局对象，不再从 `scripting` 模块导入
+- 请求改为直接 `fetch(url, init)`，不再依赖 `Request` 构造器
+- 缺少全局存储的预览 / 组件构建环境下，书签与密钥读写安全降级
+
 ## 本次更新（1.0.0）
 
 首个版本。

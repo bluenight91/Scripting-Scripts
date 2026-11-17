@@ -1,4 +1,4 @@
-import { Request, fetch } from "scripting"
+import { fetch } from "scripting"
 import { adminKey } from "./store"
 import { summarizeError } from "./format"
 import type {
@@ -135,14 +135,14 @@ async function call<T>(gateway: Gateway, path: string, options?: CallOptions): P
   let data: any = null
 
   try {
-    const response = await fetch(new Request(url, {
+    const response = await fetch(url, {
       method,
       headers,
       body: options?.body === undefined ? undefined : JSON.stringify(options.body),
       allowInsecureRequest: true,
       timeout: options?.timeout ?? 15,
       debugLabel: "magpie " + path,
-    }))
+    })
     status = response.status
     raw = await response.text()
     if (raw) {

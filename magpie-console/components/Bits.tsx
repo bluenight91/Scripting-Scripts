@@ -3,7 +3,6 @@ import {
   Button,
   HStack,
   Image,
-  Pasteboard,
   ProgressView,
   Spacer,
   Text,
@@ -15,6 +14,7 @@ import { TONES, roundedShape, UI, type Tone } from "../lib/theme"
 export function CopyChip({ text, label = "复制" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false)
   function copy() {
+    if (typeof Pasteboard === "undefined") return
     void Pasteboard.setString(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1400)
