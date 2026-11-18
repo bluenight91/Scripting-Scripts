@@ -100,7 +100,7 @@ export function connectionErrorHint(kind: SurgeApiErrorKind | null | undefined):
     case "timeout":
       return "检查 Surge 监听地址、同一网络、防火墙与 Scripting 本地网络权限"
     case "refused":
-      return "确认 Surge HTTP API 已开启且端口正确"
+      return "确认引擎已启动；协议和端口要与 http-api、http-api-tls 一致（示例端口 6171，也常用 6166）"
     case "tls":
       return "安装并信任 Surge MITM CA，确认访问地址与证书匹配"
     case "protocol":

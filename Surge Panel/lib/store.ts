@@ -4,6 +4,7 @@ import {
   fetchOverviewSamples,
   getRecentRequests,
   getTraffic,
+  protocolOverrideFor,
   surgeApiErrorKind,
   surgeApiErrorMessage,
   type SurgeConfig,
@@ -482,18 +483,34 @@ export function openActivity(segment: ActivitySegment, mode?: ConnectionsMode) {
 
 // ---------- 实时速率 ----------
 
-function aggregateCurrentSpeeds(entries: Record<string, TrafficEntry>): {
+function aggregateCurrentSpeeds(entries: Record<string, TrafficEntry> | null | undefined): {
   inSpeed: number
   outSpeed: number
 } {
   let inSpeed = 0
   let outSpeed = 0
+  if (!entries) return { inSpeed, outSpeed }
   for (const name in entries) {
     const e = entries[name]
-    inSpeed += e.inCurrentSpeed
-    outSpeed += e.outCurrentSpeed
+    if (!e || typeof e !== "object") continue
+    inSpeed += Number(e.inCurrentSpeed) || 0
+    outSpeed += Number(e.outCurrentSpeed) || 0
   }
   return { inSpeed, outSpeed }
+}
+
+function maybePersistProtocol(activeId: string, config: SurgeConfig) {
+  const override = protocolOverrideFor(config)
+  if (!override || !activeId) return
+  const previous = findInstance(state.instances, activeId)
+  if (!previous || previous.protocol === override) return
+  // 不走 updateInstance：那会作废正在进行的轮询。请求层已经按探测到的协议在连。
+  const instances = state.instances.map((i) => (i.id === activeId ? { ...i, protocol: override } : i))
+  persistInstanceState(instances, state.activeId)
+  patch({
+    instances,
+    ...(state.activeId === activeId ? { config: { ...state.config, protocol: override } } : {}),
+  })
 }
 
 function connectionErrorState(error: unknown): Pick<StoreState, "error" | "errorKind" | "running" | "updatedAt"> {
@@ -546,6 +563,7 @@ async function tickTraffic() {
   } finally {
     if (connectionIsCurrent(generation, activeId)) trafficInFlight = false
   }
+  if (connectionIsCurrent(generation, activeId)) maybePersistProtocol(activeId, config)
   return Date.now() - t0
 }
 
@@ -607,6 +625,7 @@ async function tick() {
   } catch (e) {
     if (!connectionIsCurrent(generation, activeId)) return
     patch(connectionErrorState(e))
+    maybePersistProtocol(activeId, config)
     if (surgeApiErrorKind(e) === "auth") return
   }
 
@@ -625,6 +644,7 @@ async function tick() {
       // 忽略
     }
   }
+  if (connectionIsCurrent(generation, activeId)) maybePersistProtocol(activeId, config)
 }
 
 function scheduleNext() {

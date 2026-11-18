@@ -50,13 +50,15 @@ http-api-tls = false
 http-api-tls = true
 ```
 
-Scripting 的 `allowInsecureRequest` 只负责允许明文 HTTP，并不能跳过 HTTPS 证书验证。连接失败时，实例页会区分 Key、超时、拒绝连接、TLS 与协议不匹配，并给出对应检查项。
+Scripting 的 `allowInsecureRequest` 只负责允许明文 HTTP，并不能跳过 HTTPS 证书验证。连接失败时，实例页会区分 Key、超时、拒绝连接、TLS 与协议不匹配，并给出对应检查项。Surge iOS 6 / Mac 6.11 的手册示例端口是 `6171`，本面板默认仍是 `6166`；请与配置里的 `http-api` 保持一致。
 
 `/metrics` 仅 iOS 5.22+ / Mac 6.9+；商店版与 Mac 6.8 仍可用流量、策略和请求，只是没有内存与封禁指标。
 
 外部资源（`/v1/external_resources`）与 IP 归属（`/v1/geoip`）对应 iOS 5.23 / Mac 6.10（TestFlight 5.102 即 5.23 RC）。面板不比较版本号，只看接口是否响应；不可用时外部资源页会显示 HTTP 状态与正在运行的引擎版本，便于确认是否需要重启引擎或连错了设备。连接与 DNS 详情在不可用时不显示归属，其它功能不受影响。
 
-外部策略组（`policy-path`）里的节点需要 Surge TestFlight 新增的 `GET /v1/policies?include_external=true`：策略组详情会把这些节点标为「外部」，「全部测速」时按 identifier 经脚本 `$httpClient` 的 `policy` 选项逐个请求计时（需开启脚本功能，数值为完整 HTTP 耗时，与 Surge 基准测试口径不同）。旧版本 Surge 不返回该字段，策略组详情保持原样。
+外部策略组（`policy-path`）里的节点需要 `GET /v1/policies?include_external=true`（官方文档为 iOS 6.0 / Mac 6.11，TestFlight 5.102 起已有该参数）：策略组详情会把这些节点标为「外部」，「全部测速」时按 identifier 经脚本 `$httpClient` 的 `policy` 选项逐个请求计时（需开启脚本功能，数值为完整 HTTP 耗时，与 Surge 基准测试口径不同）。旧版本 Surge 不返回该字段，策略组详情保持原样。
+
+若面板协议和 Surge 的 `http-api-tls` 不一致，系统往往只报 “Could not connect to the server”，而不是证书错误。面板会自动改用另一种协议再试，连上后写回实例。
 
 ## 远程访问与安全
 

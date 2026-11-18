@@ -113,3 +113,47 @@ export function validateEndpoint(host: string, port: string, key: string): strin
   if (!key.trim()) return "请填写 HTTP API Key"
   return null
 }
+
+export type TransportFailureKind = "auth" | "timeout" | "refused" | "tls" | "protocol" | "network"
+
+const REFUSED_MESSAGE =
+  "连不上 Surge HTTP API。请确认引擎正在运行，且面板的协议、端口与配置里的 http-api、http-api-tls 一致"
+
+/**
+ * 把 Scripting / URLSession 的传输层报错归类。
+ * 「Could not connect to the server.」是 -1004：端口没人听，或明文 HTTP 打到了 TLS 端口被立刻重置。
+ */
+export function classifyTransportFailure(raw: unknown): { kind: TransportFailureKind; message: string } {
+  const s = raw instanceof Error ? raw.message : String(raw)
+  if (/wrong version|unexpected.*response|SSL.*record|plain HTTP|protocol error/i.test(s)) {
+    return { kind: "protocol", message: "HTTP/HTTPS 协议可能与 Surge 的 http-api-tls 设置不一致" }
+  }
+  if (/TLS|TlsHandler|证书|certificate|secure connection/i.test(s)) {
+    return {
+      kind: "tls",
+      message: "HTTPS 证书验证失败。请在本机安装并信任 Surge MITM CA，并确认访问地址与证书匹配",
+    }
+  }
+  if (/401|unauthorized/i.test(s)) {
+    return { kind: "auth", message: "API Key 无效或没有访问权限" }
+  }
+  if (/timeout|timed?\s*out|ETIMEDOUT|超时/i.test(s)) {
+    return { kind: "timeout", message: "连接超时" }
+  }
+  if (
+    /ECONNREFUSED|ECONNRESET|ENETRESET|connection refused|connection reset|network connection was lost|could not connect|cannot connect|无法连接|拒绝连接|连接被重置|-1004|-1005/i.test(
+      s
+    )
+  ) {
+    return { kind: "refused", message: REFUSED_MESSAGE }
+  }
+  if (/could not find|nodename|not known|ENOTFOUND|找不到主机/i.test(s)) {
+    return { kind: "network", message: "找不到主机，请检查实例地址" }
+  }
+  return { kind: "network", message: s }
+}
+
+/** 端口拒绝、协议不符、TLS 握手失败时，换另一种协议还有机会连上。超时和密钥错误不用换。 */
+export function shouldTryAlternateProtocol(kind: TransportFailureKind): boolean {
+  return kind === "refused" || kind === "protocol" || kind === "tls"
+}

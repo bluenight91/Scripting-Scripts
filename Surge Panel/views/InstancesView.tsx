@@ -28,6 +28,7 @@ import {
 import {
   getEnvironment,
   probeOutbound,
+  protocolOverrideFor,
   surgeApiErrorKind,
   surgeApiErrorMessage,
   type SurgeApiErrorKind,
@@ -160,8 +161,11 @@ export function InstanceEditor({
       } catch {
         // environment 在部分设备不可用
       }
+      const override = protocolOverrideFor(cfg)
+      if (override) setProtocol(override)
       const bits = [
         "连通正常",
+        override ? `已改用 ${override.toUpperCase()}` : null,
         `${probe.latencyMs} ms`,
         probe.mode ? `出站 ${probe.mode}` : null,
         probe.version ? `v${probe.version}` : null,
@@ -176,17 +180,21 @@ export function InstanceEditor({
         lastLatencyMs: probe.latencyMs,
         lastError: undefined,
         lastErrorAt: undefined,
+        ...(override ? { protocol: override } : {}),
       }
       setProbeMeta(health)
       if (testingSavedConnection()) updateInstance(initial.id, health)
     } catch (e) {
       const kind = surgeApiErrorKind(e)
       const message = surgeApiErrorMessage(e)
+      const override = protocolOverrideFor(cfg)
+      if (override) setProtocol(override)
       setMsg(`失败：${message}。${connectionErrorHint(kind)}`)
       setMsgKind(kind)
       const failed: Partial<SurgeInstance> = {
         lastError: message,
         lastErrorAt: Date.now(),
+        ...(override ? { protocol: override } : {}),
       }
       setProbeMeta(failed)
       if (testingSavedConnection()) updateInstance(initial.id, failed)
@@ -244,7 +252,7 @@ export function InstanceEditor({
       await deleteInstance(initial.id)
       onDone?.()
     } catch (e) {
-      setMsg(String(e))
+      setMsg(surgeApiErrorMessage(e))
     }
   }
 
